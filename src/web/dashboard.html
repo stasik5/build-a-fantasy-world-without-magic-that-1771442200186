@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Builder Swarm Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --text-bright: #f0f6fc;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --orange: #d18616;
+    --worker0: #d29922;
+    --worker1: #bc8cff;
+    --worker2: #58a6ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5;
+    overflow: hidden; height: 100vh; display: flex; flex-direction: column;
+  }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+    height: 44px; flex-shrink: 0;
+  }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .logo { color: var(--accent); font-weight: bold; font-size: 14px; cursor: pointer; }
+  .task-desc { color: var(--text-dim); max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .stat { display: flex; align-items: center; gap: 5px; }
+  .stat-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; }
+  .stat-value { color: var(--text-bright); font-weight: bold; }
+  .phase-badge {
+    padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase;
+    background: var(--bg-tertiary); color: var(--text-dim); border: 1px solid var(--border);
+  }
+  .phase-badge.executing { background: #0d419d40; color: var(--accent); border-color: var(--accent); }
+  .phase-badge.dispatching { background: #3fb95020; color: var(--green); border-color: var(--green); }
+  .phase-badge.reviewing { background: #d2992220; color: var(--yellow); border-color: var(--yellow); }
+  .phase-badge.final_review { background: #bc8cff20; color: var(--purple); border-color: var(--purple); }
+  .phase-badge.done, .phase-badge.completed { background: #3fb95030; color: var(--green); border-color: var(--green); }
+  .phase-badge.failed { background: #f8514920; color: var(--red); border-color: var(--red); }
+  .ws-indicator { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+  .ws-indicator.connected { background: var(--green); }
+  .btn-icon {
+    background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 4px 8px;
+    border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit;
+  }
+  .btn-icon:hover { color: var(--text); border-color: var(--text-dim); }
+
+  /* Lobby */
+  #lobbyView { display: flex; flex-direction: column; height: calc(100vh - 44px); overflow: hidden; }
+  .lobby-tabs { display: flex; gap: 0; background: var(--bg-secondary); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .lobby-tab {
+    padding: 12px 24px; font-size: 12px; font-weight: bold; text-transform: uppercase; cursor: pointer;
+    color: var(--text-dim); border-bottom: 2px solid transparent; letter-spacing: 0.5px; background: none; border: none;
+  }
+  .lobby-tab:hover { color: var(--text); background: var(--bg-tertiary); }
+  .lobby-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .lobby-content { flex: 1; overflow-y: auto; padding: 24px; min-height: 0; }
+  .lobby-section { max-width: 720px; width: 100%; margin: 0 auto; }
+  .lobby-section.wide { max-width: 1200px; }
+  .lobby-tab-content { display: none; height: 100%; }
+  .lobby-tab-content.active { display: block; }
+  .new-project-card {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; margin-bottom: 24px;
+  }
+  .new-project-card h2 { color: var(--text-bright); font-size: 16px; margin-bottom: 16px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; color: var(--text-dim); font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+  .form-group input, .form-group textarea {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 10px; border-radius: 4px; font-family: inherit; font-size: 13px; resize: vertical;
+  }
+  .form-group textarea { min-height: 70px; }
+  .form-group input:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); }
+  .form-row { display: flex; gap: 12px; align-items: flex-end; }
+  .form-row .form-group { flex: 1; }
+  .btn-primary {
+    background: var(--accent); color: #fff; border: none; padding: 8px 20px; border-radius: 4px;
+    cursor: pointer; font-family: inherit; font-size: 13px; font-weight: bold;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary {
+    background: var(--bg-tertiary); color: var(--text); border: 1px solid var(--border); padding: 8px 16px;
+    border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 12px;
+  }
+  .btn-secondary:hover { border-color: var(--text-dim); }
+  .project-history h3 { color: var(--text-dim); font-size: 12px; text-transform: uppercase; margin-bottom: 10px; }
+  .project-item {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px;
+  }
+  .project-item:hover { border-color: var(--text-dim); }
+  .project-status-icon { font-size: 14px; flex-shrink: 0; }
+  .project-info { flex: 1; min-width: 0; }
+  .project-task { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-meta { color: var(--text-dim); font-size: 11px; }
+  .project-actions { flex-shrink: 0; }
+  .empty-state { color: var(--text-dim); text-align: center; padding: 20px; font-style: italic; }
+
+  /* Preview */
+  .preview-container { display: flex; flex-direction: column; gap: 16px; height: 100%; }
+  .preview-selector { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
+  .preview-selector select {
+    flex: 1; max-width: 400px; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 4px; font-family: inherit; font-size: 13px;
+  }
+  .preview-selector select:focus { outline: none; border-color: var(--accent); }
+  .preview-frame-container {
+    flex: 1; min-height: 0; background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;
+  }
+  .preview-frame-header {
+    display: flex; align-items: center; justify-content: space-between; padding: 8px 12px;
+    background: var(--bg-tertiary); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .preview-url { font-size: 12px; color: var(--text-dim); font-family: monospace; }
+  .preview-actions { display: flex; gap: 8px; }
+  .preview-frame { flex: 1; width: 100%; height: 100%; border: none; background: #fff; }
+  .preview-empty {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); font-style: italic;
+  }
+  .open-tab-link { color: var(--accent); text-decoration: none; font-size: 12px; }
+  .open-tab-link:hover { text-decoration: underline; }
+
+  /* Backend controls */
+  .backend-panel {
+    background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; margin-bottom: 12px;
+  }
+  .backend-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .backend-title { font-size: 11px; font-weight: bold; text-transform: uppercase; color: var(--text-dim); }
+  .backend-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .backend-status.running { background: #3fb95020; color: var(--green); }
+  .backend-status.stopped { background: var(--bg); color: var(--text-dim); }
+  .backend-status.static { background: var(--bg); color: var(--text-dim); }
+  .backend-info { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .backend-type { font-size: 12px; color: var(--text); }
+  .backend-url { font-size: 12px; color: var(--accent); font-family: monospace; }
+  .backend-url a { color: var(--accent); text-decoration: none; }
+  .backend-url a:hover { text-decoration: underline; }
+  .backend-actions { display: flex; gap: 8px; }
+  .backend-logs {
+    margin-top: 8px; max-height: 120px; overflow-y: auto;
+    background: var(--bg); border-radius: 4px; padding: 8px; font-size: 11px;
+    font-family: monospace; white-space: pre-wrap; word-break: break-all;
+  }
+  .backend-logs:empty { display: none; }
+
+  .toast {
+    position: fixed; top: 56px; right: 16px; background: #f8514930; border: 1px solid var(--red);
+    color: var(--red); padding: 10px 16px; border-radius: 6px; font-size: 12px; z-index: 100;
+    display: none; max-width: 400px;
+  }
+  .toast.visible { display: block; }
+
+  /* Deploy banner */
+  .deploy-banner {
+    display: none; padding: 8px 16px; background: #3fb95015; border-bottom: 1px solid var(--green);
+    font-size: 12px; color: var(--green); align-items: center; gap: 12px; flex-shrink: 0;
+  }
+  .deploy-banner.visible { display: flex; }
+  .deploy-banner a { color: var(--accent); text-decoration: underline; }
+  .deploy-banner .deploy-label { font-weight: bold; text-transform: uppercase; font-size: 11px; }
+  .deploy-banner .deploy-spinner { color: var(--yellow); }
+
+  /* Monitor */
+  #monitorView {
+    display: none; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    flex: 1; min-height: 0; gap: 1px; background: var(--border); overflow: hidden;
+  }
+  .panel { background: var(--bg); display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .panel-title { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
+  .panel-count { font-size: 11px; color: var(--text-dim); background: var(--bg-tertiary); padding: 1px 8px; border-radius: 10px; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 8px; }
+  .panel-body::-webkit-scrollbar { width: 6px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
+
+  .subtask { padding: 6px 8px; border-radius: 4px; margin-bottom: 4px; display: flex; align-items: flex-start; gap: 8px; border-left: 3px solid transparent; }
+  .subtask:hover { background: var(--bg-secondary); }
+  .subtask.pending { border-left-color: var(--text-dim); }
+  .subtask.in_progress { border-left-color: var(--yellow); background: #d2992208; }
+  .subtask.completed { border-left-color: var(--green); }
+  .subtask.failed { border-left-color: var(--red); }
+  .subtask-icon { flex-shrink: 0; width: 16px; text-align: center; }
+  .subtask-title { flex: 1; }
+  .subtask-worker { font-size: 11px; padding: 0 6px; border-radius: 3px; background: var(--bg-tertiary); }
+
+  .workers { display: flex; flex-direction: column; gap: 8px; }
+  .worker-card { padding: 10px 12px; border-radius: 6px; background: var(--bg-secondary); border: 1px solid var(--border); }
+  .worker-card.active { border-color: var(--accent); }
+  .worker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .worker-name { font-weight: bold; font-size: 12px; }
+  .worker-name.w0 { color: var(--worker0); }
+  .worker-name.w1 { color: var(--worker1); }
+  .worker-name.w2 { color: var(--worker2); }
+  .worker-status { font-size: 11px; color: var(--text-dim); }
+  .worker-task { font-size: 12px; color: var(--text); margin-bottom: 4px; }
+  .worker-tool { font-size: 11px; color: var(--accent); }
+  .worker-tool .dots { color: var(--text-dim); animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+  .file-tree { list-style: none; }
+  .file-item { padding: 3px 8px; border-radius: 3px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .file-item:hover { background: var(--bg-secondary); }
+  .file-item.selected { background: var(--bg-tertiary); color: var(--accent); }
+  .file-icon { color: var(--text-dim); font-size: 11px; }
+  .file-preview { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .file-preview-header { font-size: 11px; color: var(--accent); margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .file-preview pre { background: var(--bg-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 11px; line-height: 1.4; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
+
+  /* Chat + Events panel (bottom-right) */
+  .chat-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .panel-tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg-secondary); flex-shrink: 0; }
+  .panel-tab {
+    padding: 6px 14px; font-size: 11px; font-weight: bold; text-transform: uppercase; cursor: pointer;
+    color: var(--text-dim); border-bottom: 2px solid transparent; letter-spacing: 0.5px;
+  }
+  .panel-tab:hover { color: var(--text); }
+  .panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .panel-tab .tab-badge {
+    display: inline-block; min-width: 16px; text-align: center; padding: 0 4px; font-size: 10px;
+    background: var(--accent); color: #fff; border-radius: 8px; margin-left: 4px;
+  }
+
+  .tab-content { display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column; }
+  .tab-content.active { display: flex; }
+
+  .chat-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+  .chat-messages::-webkit-scrollbar { width: 6px; }
+  .chat-messages::-webkit-scrollbar-track { background: transparent; }
+  .chat-messages::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
+  .chat-msg { margin-bottom: 8px; }
+  .chat-msg .chat-sender { font-size: 10px; text-transform: uppercase; font-weight: bold; margin-bottom: 2px; }
+  .chat-msg .chat-sender.user { color: var(--accent); }
+  .chat-msg .chat-sender.orchestrator { color: var(--purple); }
+  .chat-msg .chat-sender.system { color: var(--text-dim); }
+  .chat-msg .chat-body { font-size: 12px; color: var(--text); line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+  .chat-msg .chat-body.system-body { color: var(--text-dim); font-style: italic; }
+  .chat-msg .chat-time { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+  .chat-input-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border); background: var(--bg-secondary); flex-shrink: 0; }
+  .chat-input-row input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 10px; border-radius: 4px; font-family: inherit; font-size: 12px;
+  }
+  .chat-input-row input:focus { outline: none; border-color: var(--accent); }
+  .chat-input-row button {
+    background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 4px;
+    cursor: pointer; font-family: inherit; font-size: 12px; font-weight: bold; flex-shrink: 0;
+  }
+  .chat-input-row button:hover { opacity: 0.9; }
+  .chat-input-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .chat-typing { padding: 4px 8px; font-size: 11px; color: var(--purple); display: none; flex-shrink: 0; }
+  .chat-typing.visible { display: block; }
+
+  .event { padding: 3px 0; display: flex; gap: 8px; font-size: 12px; border-bottom: 1px solid #21262d40; }
+  .event-time { color: var(--text-dim); flex-shrink: 0; font-size: 11px; min-width: 65px; }
+  .event-type { flex-shrink: 0; min-width: 100px; font-weight: bold; font-size: 11px; }
+  .event-type.phase { color: var(--accent); }
+  .event-type.plan { color: var(--purple); }
+  .event-type.assign { color: var(--yellow); }
+  .event-type.complete { color: var(--green); }
+  .event-type.failed { color: var(--red); }
+  .event-type.review { color: var(--orange); }
+  .event-type.file { color: var(--green); }
+  .event-type.done { color: var(--green); }
+  .event-type.error { color: var(--red); }
+  .event-type.info { color: var(--text-dim); }
+  .event-msg { color: var(--text); flex: 1; }
+
+  /* Settings Drawer */
+  .drawer-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 50; display: none; }
+  .drawer-backdrop.open { display: block; }
+  .settings-drawer {
+    position: fixed; top: 0; right: -380px; width: 380px; height: 100vh;
+    background: var(--bg-secondary); border-left: 1px solid var(--border);
+    z-index: 51; transition: right 0.25s ease; display: flex; flex-direction: column;
+  }
+  .settings-drawer.open { right: 0; }
+  .settings-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .settings-header span { font-weight: bold; font-size: 14px; color: var(--text-bright); }
+  .settings-body { flex: 1; overflow-y: auto; padding: 16px; }
+  .settings-body .form-group { margin-bottom: 12px; }
+  .settings-body .form-group label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 3px; display: block; }
+  .settings-body .form-group input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 8px; border-radius: 4px; font-family: inherit; font-size: 12px;
+  }
+  .settings-body .form-group input:focus { outline: none; border-color: var(--accent); }
+  .settings-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+  .settings-footer .btn-primary, .settings-footer .btn-secondary { flex: 1; }
+  .settings-saved { color: var(--green); font-size: 11px; text-align: center; padding: 6px 0; display: none; }
+
+  /* Toggle switch */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+  .toggle-row label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; }
+  .toggle {
+    position: relative; width: 36px; height: 20px; background: var(--bg-tertiary); border-radius: 10px;
+    cursor: pointer; border: 1px solid var(--border); transition: background 0.2s; flex-shrink: 0;
+  }
+  .toggle.on { background: var(--green); border-color: var(--green); }
+  .toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+    background: var(--text-bright); border-radius: 50%; transition: left 0.2s;
+  }
+  .toggle.on::after { left: 18px; }
+
+  .settings-section-title {
+    font-size: 11px; color: var(--accent); text-transform: uppercase; font-weight: bold;
+    margin: 16px 0 8px; padding-top: 12px; border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <span class="logo" id="logoBtn" title="Back to lobby">Builder Swarm</span>
+    <span class="task-desc" id="taskDesc"></span>
+  </div>
+  <div class="header-right">
+    <span class="phase-badge" id="phaseBadge" style="display:none">idle</span>
+    <div class="stat" id="statsGroup" style="display:none"><span class="stat-label">Tok</span><span class="stat-value" id="statTokens">0</span></div>
+    <div class="stat" id="callsStat" style="display:none"><span class="stat-label">Calls</span><span class="stat-value" id="statCalls">0</span></div>
+    <div class="stat" id="iterStat" style="display:none"><span class="stat-label">Iter</span><span class="stat-value" id="statIter">0</span></div>
+    <button class="btn-icon" id="newProjectBtn" style="display:none" title="New Project">+ New</button>
+    <button class="btn-icon" id="settingsBtn" title="Settings">Settings</button>
+    <div class="ws-indicator" id="wsIndicator"></div>
+  </div>
+</div>
+
+<!-- Deploy banner -->
+<div class="deploy-banner" id="deployBanner">
+  <span class="deploy-label" id="deployLabel">Deploying...</span>
+  <span id="deployLinks"></span>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- LOBBY -->
+<div id="lobbyView">
+  <div class="lobby-tabs">
+    <button class="lobby-tab active" data-lobby-tab="projects">Projects</button>
+    <button class="lobby-tab" data-lobby-tab="preview">Preview</button>
+  </div>
+  <div class="lobby-content">
+    <!-- Projects Tab -->
+    <div class="lobby-tab-content active" data-lobby-tab="projects">
+      <div class="lobby-section">
+        <div class="new-project-card">
+          <h2>New Project</h2>
+          <div class="form-group"><label>Task Description</label><textarea id="taskInput" placeholder="Describe what you want to build..."></textarea></div>
+          <div class="form-row">
+            <div class="form-group"><label>Max Iterations</label><input type="number" id="maxIterInput" value="50" min="1" max="200"/></div>
+            <div class="form-group" style="flex:0"><label>&nbsp;</label><button class="btn-primary" id="startBtn">Start Project</button></div>
+          </div>
+        </div>
+        <div class="project-history"><h3>Project History</h3><div id="projectList"><div class="empty-state">No projects yet</div></div></div>
+      </div>
+    </div>
+    <!-- Preview Tab -->
+    <div class="lobby-tab-content" data-lobby-tab="preview">
+      <div class="lobby-section wide" style="height: 100%;">
+        <div class="preview-container">
+          <div class="preview-selector">
+            <select id="previewProjectSelect">
+              <option value="">Select a project to preview...</option>
+            </select>
+            <button class="btn-secondary" id="refreshPreviewBtn">Refresh</button>
+            <button class="btn-secondary" id="openPreviewTabBtn" style="display:none">Open in Tab</button>
+          </div>
+          <!-- Backend Panel -->
+          <div class="backend-panel" id="backendPanel" style="display:none">
+            <div class="backend-header">
+              <span class="backend-title">Backend Server</span>
+              <span class="backend-status" id="backendStatus">detecting...</span>
+            </div>
+            <div class="backend-info">
+              <span class="backend-type" id="backendType">-</span>
+              <span class="backend-url" id="backendUrl" style="display:none">
+                <a href="#" id="backendUrlLink" target="_blank">-</a>
+              </span>
+              <div class="backend-actions">
+                <button class="btn-secondary" id="startBackendBtn">Start</button>
+                <button class="btn-secondary" id="stopBackendBtn" style="display:none">Stop</button>
+              </div>
+            </div>
+            <div class="backend-logs" id="backendLogs"></div>
+          </div>
+          <div class="preview-frame-container">
+            <div class="preview-frame-header">
+              <span class="preview-url" id="previewUrl">No project selected</span>
+              <div class="preview-actions">
+                <a href="#" class="open-tab-link" id="openTabLink" style="display:none" target="_blank">Open in new tab</a>
+              </div>
+            </div>
+            <div id="previewFrameWrapper" style="flex:1;display:none;">
+              <iframe class="preview-frame" id="previewFrame"></iframe>
+            </div>
+            <div class="preview-empty" id="previewEmpty">Select a project to preview it locally</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MONITOR -->
+<div id="monitorView">
+  <!-- Top-left: Subtasks -->
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">Subtasks</span><span class="panel-count" id="subtaskCount">0/0</span></div>
+    <div class="panel-body" id="subtaskList"></div>
+  </div>
+  <!-- Top-right: Workers -->
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">Workers</span></div>
+    <div class="panel-body"><div class="workers" id="workerCards">
+      <div class="worker-card" id="worker0"><div class="worker-header"><span class="worker-name w0">Worker 0</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
+      <div class="worker-card" id="worker1"><div class="worker-header"><span class="worker-name w1">Worker 1</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
+      <div class="worker-card" id="worker2"><div class="worker-header"><span class="worker-name w2">Worker 2</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
+    </div></div>
+  </div>
+  <!-- Bottom-left: Files -->
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">Files</span><span class="panel-count" id="fileCount">0</span></div>
+    <div class="panel-body" id="filePanel"><ul class="file-tree" id="fileTree"></ul><div class="file-preview" id="filePreview" style="display:none"><div class="file-preview-header"><span id="previewName">-</span><span id="previewSize">-</span></div><pre id="previewContent"></pre></div></div>
+  </div>
+  <!-- Bottom-right: Chat + Events (tabbed) -->
+  <div class="panel chat-panel">
+    <div class="panel-tabs">
+      <div class="panel-tab active" data-tab="chat">Chat</div>
+      <div class="panel-tab" data-tab="events">Events <span class="tab-badge" id="eventBadge" style="display:none">0</span></div>
+    </div>
+    <!-- Chat tab -->
+    <div class="tab-content active" data-tab="chat">
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-typing" id="chatTyping">Orchestrator is thinking...</div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="Ask the orchestrator about the project..." />
+        <button id="chatSendBtn">Send</button>
+      </div>
+    </div>
+    <!-- Events tab -->
+    <div class="tab-content" data-tab="events">
+      <div class="panel-body" id="eventLog"></div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS DRAWER -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<div class="settings-drawer" id="settingsDrawer">
+  <div class="settings-header"><span>Settings</span><button class="btn-icon" id="closeSettingsBtn">X</button></div>
+  <div class="settings-body">
+    <div class="form-group"><label>API Key</label><input type="password" id="sApiKey"/></div>
+    <div class="form-group"><label>Model</label><input type="text" id="sModel"/></div>
+    <div class="form-group"><label>Base URL</label><input type="text" id="sBaseUrl"/></div>
+    <hr style="border-color:var(--border);margin:12px 0"/>
+    <div class="form-group"><label>Max Concurrent Workers</label><input type="number" id="sMaxConcurrent" min="1" max="10"/></div>
+    <div class="form-group"><label>Max Calls / Hour</label><input type="number" id="sMaxCallsHour" min="1"/></div>
+    <div class="form-group"><label>Max Orchestrator Iterations</label><input type="number" id="sMaxOrchIter" min="1"/></div>
+    <div class="form-group"><label>Max Worker Tool Loops</label><input type="number" id="sMaxToolLoops" min="1"/></div>
+    <div class="form-group"><label>Max Subtask Attempts</label><input type="number" id="sMaxAttempts" min="1"/></div>
+
+    <div class="settings-section-title">GitHub Deploy</div>
+    <div class="form-group"><label>GitHub Username</label><input type="text" id="sGhUsername"/></div>
+    <div class="form-group"><label>GitHub Email</label><input type="text" id="sGhEmail"/></div>
+    <div class="form-group"><label>GitHub PAT</label><input type="password" id="sGhPat"/></div>
+    <div class="toggle-row">
+      <label>Auto-deploy to GitHub Pages</label>
+      <div class="toggle" id="sAutoDeployToggle"></div>
+    </div>
+
+    <div class="settings-saved" id="settingsSaved">Saved!</div>
+  </div>
+  <div class="settings-footer">
+    <button class="btn-primary" id="applySettingsBtn">Apply</button>
+    <button class="btn-secondary" id="persistSettingsBtn">Save to .env</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const state = {
+    mode:'lobby', serverMode:'idle', subtasks:[], phase:'idle',
+    tokenStats:{totalTokens:0,callCount:0}, iteration:0,
+    files:[], events:[], selectedFile:null, projects:[],
+    workers:[{status:'idle',task:'-',tool:'-'},{status:'idle',task:'-',tool:'-'},{status:'idle',task:'-',tool:'-'}],
+    chatHistory:[], chatWaiting:false, activeTab:'chat', unreadEvents:0,
+    deployResult:null, autoDeployEnabled:false,
+  };
+  const $=id=>document.getElementById(id);
+  const esc=s=>s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';
+  const fmtTime=ts=>new Date(ts).toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const fmtNum=n=>n>=1000?(n/1000).toFixed(1)+'k':String(n);
+  const STATUS_ICONS={pending:'\u25CB',in_progress:'\u25C9',completed:'\u2713',failed:'\u2717'};
+  const PROJ_ICONS={completed:'\u2713',partial:'!','in-progress':'\u25CB',unknown:'?',corrupted:'\u2717'};
+  const PROJ_COLORS={completed:'var(--green)',partial:'var(--yellow)','in-progress':'var(--text-dim)',unknown:'var(--text-dim)',corrupted:'var(--red)'};
+
+  // --- Tab switching ---
+  document.querySelectorAll('.panel-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.tab;
+      state.activeTab = target;
+      document.querySelectorAll('.panel-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === target));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.dataset.tab === target));
+      if (target === 'events') { state.unreadEvents = 0; $('eventBadge').style.display = 'none'; }
+    });
+  });
+
+  // --- Lobby tab switching ---
+  document.querySelectorAll('.lobby-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.lobbyTab;
+      document.querySelectorAll('.lobby-tab').forEach(t => t.classList.toggle('active', t.dataset.lobbyTab === target));
+      document.querySelectorAll('.lobby-tab-content').forEach(c => c.classList.toggle('active', c.dataset.lobbyTab === target));
+      if (target === 'preview') {
+        updatePreviewSelector();
+      }
+    });
+  });
+
+  // --- Preview functionality ---
+  let currentPreviewProject = null;
+  let currentBackendUrl = null;
+
+  function updatePreviewIframe() {
+    if (!currentPreviewProject) return;
+    const frame = $('previewFrame');
+    const urlDisplay = $('previewUrl');
+    const openTabLink = $('openTabLink');
+
+    if (currentBackendUrl) {
+      // Backend is running - show it in iframe
+      frame.src = currentBackendUrl;
+      urlDisplay.textContent = currentBackendUrl;
+      openTabLink.href = currentBackendUrl;
+    } else {
+      // No backend - show static preview
+      const previewUrl = '/preview/' + encodeURIComponent(currentPreviewProject) + '/';
+      frame.src = previewUrl;
+      urlDisplay.textContent = previewUrl;
+      openTabLink.href = previewUrl;
+    }
+  }
+
+  function updatePreviewSelector() {
+    const select = $('previewProjectSelect');
+    const projects = state.projects || [];
+    select.innerHTML = '<option value="">Select a project to preview...</option>' +
+      projects.map(p => '<option value="' + esc(p.dirName) + '">' + esc(p.taskDescription || p.dirName) + ' (' + p.status + ')</option>').join('');
+  }
+
+  function loadPreview() {
+    const select = $('previewProjectSelect');
+    const projectName = select.value;
+    const frameWrapper = $('previewFrameWrapper');
+    const emptyMsg = $('previewEmpty');
+    const urlDisplay = $('previewUrl');
+    const openTabLink = $('openTabLink');
+    const frame = $('previewFrame');
+    const backendPanel = $('backendPanel');
+
+    if (!projectName) {
+      frameWrapper.style.display = 'none';
+      emptyMsg.style.display = 'flex';
+      urlDisplay.textContent = 'No project selected';
+      openTabLink.style.display = 'none';
+      backendPanel.style.display = 'none';
+      currentPreviewProject = null;
+      currentBackendUrl = null;
+      return;
+    }
+
+    currentPreviewProject = projectName;
+    currentBackendUrl = null; // Reset until we detect backend status
+    const projectDir = '/projects/' + projectName;
+
+    // Check backend status (might already be running)
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'backend:status', projectDir }));
+    }
+
+    // Show static preview initially, will update if backend is running
+    const previewUrl = '/preview/' + encodeURIComponent(projectName) + '/';
+    frameWrapper.style.display = 'block';
+    emptyMsg.style.display = 'none';
+    urlDisplay.textContent = previewUrl;
+    openTabLink.style.display = 'inline';
+    openTabLink.href = previewUrl;
+    frame.src = previewUrl;
+  }
+
+  function updateBackendPanel(data) {
+    const backendPanel = $('backendPanel');
+    const backendStatus = $('backendStatus');
+    const backendType = $('backendType');
+    const backendUrl = $('backendUrl');
+    const backendUrlLink = $('backendUrlLink');
+    const startBtn = $('startBackendBtn');
+    const stopBtn = $('stopBackendBtn');
+    const logsDiv = $('backendLogs');
+
+    if (!data || data.type === 'static') {
+      backendPanel.style.display = 'none';
+      currentBackendUrl = null;
+      updatePreviewIframe();
+      return;
+    }
+
+    backendPanel.style.display = 'block';
+    backendType.textContent = 'Type: ' + data.type;
+
+    if (data.running) {
+      backendStatus.textContent = 'running';
+      backendStatus.className = 'backend-status running';
+      backendUrl.style.display = 'inline';
+      backendUrlLink.href = data.url;
+      backendUrlLink.textContent = data.url;
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-block';
+      if (data.logs && data.logs.length > 0) {
+        logsDiv.textContent = data.logs.join('\n');
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+      }
+      // Update iframe to show backend
+      currentBackendUrl = data.url;
+      updatePreviewIframe();
+    } else {
+      backendStatus.textContent = 'stopped';
+      backendStatus.className = 'backend-status stopped';
+      backendUrl.style.display = 'none';
+      startBtn.style.display = 'inline-block';
+      stopBtn.style.display = 'none';
+      logsDiv.textContent = '';
+      // Switch back to static preview
+      currentBackendUrl = null;
+      updatePreviewIframe();
+    }
+  }
+
+  $('previewProjectSelect').addEventListener('change', loadPreview);
+  $('refreshPreviewBtn').addEventListener('click', () => {
+    const frame = $('previewFrame');
+    if (frame.src) {
+      frame.src = frame.src;
+    }
+  });
+
+  $('startBackendBtn').addEventListener('click', () => {
+    if (currentPreviewProject && ws && ws.readyState === 1) {
+      const projectDir = '/projects/' + currentPreviewProject;
+      ws.send(JSON.stringify({ type: 'backend:start', projectDir }));
+      $('backendStatus').textContent = 'starting...';
+    }
+  });
+
+  $('stopBackendBtn').addEventListener('click', () => {
+    if (currentPreviewProject && ws && ws.readyState === 1) {
+      const projectDir = '/projects/' + currentPreviewProject;
+      ws.send(JSON.stringify({ type: 'backend:stop', projectDir }));
+    }
+  });
+
+  function switchToLobby(){
+    state.mode='lobby';
+    $('lobbyView').style.display='flex';$('monitorView').style.display='none';
+    $('phaseBadge').style.display='none';$('statsGroup').style.display='none';
+    $('callsStat').style.display='none';$('iterStat').style.display='none';
+    $('newProjectBtn').style.display='none';$('taskDesc').textContent='';
+    $('deployBanner').classList.remove('visible');$('monitorView').classList.remove('has-banner');
+    if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'get:projects'}));
+  }
+  function switchToMonitor(){
+    state.mode='monitor';
+    $('lobbyView').style.display='none';$('monitorView').style.display='grid';
+    $('phaseBadge').style.display='';$('statsGroup').style.display='';
+    $('callsStat').style.display='';$('iterStat').style.display='';
+    state.events=[];$('eventLog').innerHTML='';state.unreadEvents=0;
+    $('eventBadge').style.display='none';
+  }
+
+  function renderSubtasks(){
+    const c=state.subtasks.filter(s=>s.status==='completed').length;
+    $('subtaskCount').textContent=c+'/'+state.subtasks.length;
+    $('subtaskList').innerHTML=state.subtasks.map((s,i)=>{
+      const w=s.assignedWorker!=null?'<span class="subtask-worker" style="color:var(--worker'+s.assignedWorker+')">W'+s.assignedWorker+'</span>':'';
+      return '<div class="subtask '+s.status+'"><span class="subtask-icon">'+(STATUS_ICONS[s.status]||'\u25CB')+'</span><span class="subtask-title">'+(i+1)+'. '+esc(s.title)+'</span>'+w+'</div>';
+    }).join('');
+  }
+  function renderWorkers(){
+    for(let i=0;i<3;i++){
+      const w=state.workers[i],card=$('worker'+i);
+      card.className='worker-card'+(w.status==='working'?' active':'');
+      card.querySelector('.worker-status').textContent=w.status;
+      card.querySelector('.worker-task').textContent=w.task;
+      const t=card.querySelector('.worker-tool');
+      t.innerHTML=w.status==='working'?esc(w.tool)+' <span class="dots">...</span>':esc(w.tool);
+    }
+  }
+  function renderFiles(){
+    $('fileCount').textContent=state.files.length;
+    const icons={js:'\u27E8\u27E9',ts:'\u27E8\u27E9',json:'{ }',html:'\u25C7',css:'\u25C6',md:'\u00B6'};
+    $('fileTree').innerHTML=state.files.map(f=>{
+      const ext=f.split('.').pop()||'',icon=icons[ext]||'\u25AA',sel=state.selectedFile===f?' selected':'';
+      return '<li class="file-item'+sel+'" data-path="'+esc(f)+'"><span class="file-icon">'+icon+'</span><span class="file-name">'+esc(f)+'</span></li>';
+    }).join('');
+    $('fileTree').querySelectorAll('.file-item').forEach(el=>{
+      el.addEventListener('click',()=>{state.selectedFile=el.dataset.path;renderFiles();ws.send(JSON.stringify({type:'get:file',path:el.dataset.path}));});
+    });
+  }
+  function showFilePreview(p,content){
+    if(content===null){$('filePreview').style.display='none';return;}
+    $('filePreview').style.display='block';$('previewName').textContent=p;
+    $('previewSize').textContent=content.length+' chars';$('previewContent').textContent=content.slice(0,5000);
+  }
+  function addEvent(type,cls,msg){
+    state.events.push({type,cls,msg,ts:Date.now()});if(state.events.length>500)state.events.shift();
+    const d=document.createElement('div');d.className='event';
+    d.innerHTML='<span class="event-time">'+fmtTime(Date.now())+'</span><span class="event-type '+cls+'">'+esc(type)+'</span><span class="event-msg">'+esc(msg)+'</span>';
+    $('eventLog').appendChild(d);$('eventLog').scrollTop=$('eventLog').scrollHeight;
+    if(state.activeTab!=='events'){
+      state.unreadEvents++;
+      $('eventBadge').textContent=state.unreadEvents;
+      $('eventBadge').style.display='';
+    }
+  }
+  function updateHeader(){
+    $('phaseBadge').textContent=state.phase;$('phaseBadge').className='phase-badge '+state.phase;
+    $('statTokens').textContent=fmtNum(state.tokenStats.totalTokens||0);
+    $('statCalls').textContent=state.tokenStats.callCount||0;
+    $('statIter').textContent=state.iteration;
+  }
+  function renderProjects(){
+    const list=$('projectList');
+    if(!state.projects.length){list.innerHTML='<div class="empty-state">No projects yet</div>';return;}
+    list.innerHTML=state.projects.map(p=>{
+      const icon=PROJ_ICONS[p.status]||'?',color=PROJ_COLORS[p.status]||'var(--text-dim)';
+      const stats=p.subtaskStats.total>0?p.subtaskStats.completed+'/'+p.subtaskStats.total:'';
+      const canResume=p.status!=='completed'&&p.status!=='corrupted';
+      const canView=p.status!=='corrupted';
+      const escapedPath=p.fullPath.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const buttons = [];
+      if (canResume) buttons.push('<button class="btn-secondary" onclick="resumeProject(\''+escapedPath+'\')">Resume</button>');
+      if (canView) buttons.push('<button class="btn-secondary" onclick="viewProject(\''+escapedPath+'\')">View</button>');
+      return '<div class="project-item"><span class="project-status-icon" style="color:'+color+'">'+icon+'</span>'+
+        '<div class="project-info"><div class="project-task">'+esc(p.taskDescription||p.dirName)+'</div>'+
+        '<div class="project-meta">'+esc(p.dirName)+' &bull; '+stats+(p.savedAt?' &bull; '+new Date(p.savedAt).toLocaleDateString():'')+'</div></div>'+
+        '<div class="project-actions">'+buttons.join(' ')+'</div></div>';
+    }).join('');
+  }
+  function showToast(msg){$('toast').textContent=msg;$('toast').classList.add('visible');setTimeout(()=>$('toast').classList.remove('visible'),5000);}
+
+  // --- Chat ---
+  function addChatMessage(role, content, ts) {
+    state.chatHistory.push({role, content, ts});
+    const container = $('chatMessages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg';
+    const senderClass = role === 'user' ? 'user' : role === 'orchestrator' ? 'orchestrator' : 'system';
+    const bodyClass = role === 'system' ? 'chat-body system-body' : 'chat-body';
+    div.innerHTML = '<div class="chat-sender '+senderClass+'">'+ esc(role) +'</div>' +
+      '<div class="'+bodyClass+'">'+ esc(content) +'</div>' +
+      (ts ? '<div class="chat-time">'+ fmtTime(ts) +'</div>' : '');
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function sendChat() {
+    const input = $('chatInput');
+    const msg = input.value.trim();
+    if (!msg || state.chatWaiting) return;
+    input.value = '';
+    addChatMessage('user', msg, Date.now());
+    state.chatWaiting = true;
+    $('chatTyping').classList.add('visible');
+    $('chatSendBtn').disabled = true;
+    ws.send(JSON.stringify({type:'chat:send', message: msg}));
+  }
+
+  $('chatSendBtn').addEventListener('click', sendChat);
+  $('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+  function updateChatPlaceholder() {
+    const input = $('chatInput');
+    if (state.serverMode === 'completed' || state.serverMode === 'failed') {
+      input.placeholder = 'Ask about the project or request changes...';
+    } else if (state.serverMode === 'running') {
+      input.placeholder = 'Ask the orchestrator about the project...';
+    } else {
+      input.placeholder = 'Start a project first...';
+    }
+  }
+
+  // --- Deploy ---
+  function updateDeployBanner() {
+    if (state.deployResult && state.deployResult.pagesUrl) {
+      $('deployBanner').classList.add('visible');
+      $('monitorView').classList.add('has-banner');
+      $('deployLabel').textContent = 'Deployed';
+      $('deployLabel').classList.remove('deploy-spinner');
+      $('deployLinks').innerHTML =
+        '<a href="'+ esc(state.deployResult.pagesUrl) +'" target="_blank">'+ esc(state.deployResult.pagesUrl) +'</a>' +
+        (state.deployResult.repoUrl ? ' &bull; <a href="'+ esc(state.deployResult.repoUrl) +'" target="_blank">GitHub Repo</a>' : '');
+    }
+  }
+
+  // Settings
+  function openSettings(){$('drawerBackdrop').classList.add('open');$('settingsDrawer').classList.add('open');if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'get:settings'}));}
+  function closeSettings(){$('drawerBackdrop').classList.remove('open');$('settingsDrawer').classList.remove('open');}
+  function populateSettings(s){
+    $('sApiKey').value='';$('sApiKey').placeholder=s.ZAI_API_KEY||'(not set)';
+    $('sModel').value=s.ZAI_MODEL;$('sBaseUrl').value=s.ZAI_BASE_URL;
+    $('sMaxConcurrent').value=s.MAX_CONCURRENT;$('sMaxCallsHour').value=s.MAX_CALLS_PER_HOUR;
+    $('sMaxOrchIter').value=s.MAX_ORCHESTRATOR_ITERATIONS;$('sMaxToolLoops').value=s.MAX_WORKER_TOOL_LOOPS;
+    $('sMaxAttempts').value=s.MAX_SUBTASK_ATTEMPTS;
+    $('sGhUsername').value = s.GITHUB_USERNAME || '';
+    $('sGhEmail').value = s.GITHUB_EMAIL || '';
+    $('sGhPat').value = ''; $('sGhPat').placeholder = s.GITHUB_PAT || '(not set)';
+    state.autoDeployEnabled = !!s.AUTO_DEPLOY_GITHUB_PAGES;
+    $('sAutoDeployToggle').classList.toggle('on', state.autoDeployEnabled);
+  }
+  function collectSettings(){
+    const s={};const key=$('sApiKey').value.trim();if(key)s.ZAI_API_KEY=key;
+    s.ZAI_MODEL=$('sModel').value.trim();s.ZAI_BASE_URL=$('sBaseUrl').value.trim();
+    s.MAX_CONCURRENT=parseInt($('sMaxConcurrent').value)||4;s.MAX_CALLS_PER_HOUR=parseInt($('sMaxCallsHour').value)||300;
+    s.MAX_ORCHESTRATOR_ITERATIONS=parseInt($('sMaxOrchIter').value)||50;s.MAX_WORKER_TOOL_LOOPS=parseInt($('sMaxToolLoops').value)||20;
+    s.MAX_SUBTASK_ATTEMPTS=parseInt($('sMaxAttempts').value)||3;
+    s.GITHUB_USERNAME = $('sGhUsername').value.trim();
+    s.GITHUB_EMAIL = $('sGhEmail').value.trim();
+    const pat = $('sGhPat').value.trim(); if(pat) s.GITHUB_PAT = pat;
+    s.AUTO_DEPLOY_GITHUB_PAGES = state.autoDeployEnabled;
+    return s;
+  }
+  window.resumeProject=function(dirPath){ws.send(JSON.stringify({type:'resume:project',dirPath}));};
+  window.viewProject=function(dirPath){ws.send(JSON.stringify({type:'view:project',dirPath}));};
+
+  // Toggle
+  $('sAutoDeployToggle').addEventListener('click', () => {
+    state.autoDeployEnabled = !state.autoDeployEnabled;
+    $('sAutoDeployToggle').classList.toggle('on', state.autoDeployEnabled);
+  });
+
+  // Buttons
+  $('settingsBtn').addEventListener('click',openSettings);
+  $('closeSettingsBtn').addEventListener('click',closeSettings);
+  $('drawerBackdrop').addEventListener('click',closeSettings);
+  $('applySettingsBtn').addEventListener('click',()=>{
+    ws.send(JSON.stringify({type:'update:settings',settings:collectSettings(),persist:false}));
+    const sv=$('settingsSaved');sv.textContent='Applied!';sv.style.display='block';setTimeout(()=>sv.style.display='none',2000);
+  });
+  $('persistSettingsBtn').addEventListener('click',()=>{
+    ws.send(JSON.stringify({type:'update:settings',settings:collectSettings(),persist:true}));
+    const sv=$('settingsSaved');sv.textContent='Saved to .env!';sv.style.display='block';setTimeout(()=>sv.style.display='none',2000);
+  });
+  $('startBtn').addEventListener('click',()=>{
+    const task=$('taskInput').value.trim();if(!task)return;
+    $('startBtn').disabled=true;
+    ws.send(JSON.stringify({type:'create:project',task,maxIterations:parseInt($('maxIterInput').value)||50}));
+  });
+  $('logoBtn').addEventListener('click',()=>{if(state.serverMode!=='running')switchToLobby();});
+  $('newProjectBtn').addEventListener('click',()=>switchToLobby());
+
+  // WebSocket
+  let ws,reconnectDelay=1000;
+  function connect(){
+    const proto=location.protocol==='https:'?'wss:':'ws:';
+    ws=new WebSocket(proto+'//'+location.host);
+    ws.onopen=()=>{$('wsIndicator').classList.add('connected');reconnectDelay=1000;ws.send(JSON.stringify({type:'get:state'}));ws.send(JSON.stringify({type:'get:projects'}));};
+    ws.onclose=()=>{$('wsIndicator').classList.remove('connected');setTimeout(connect,reconnectDelay);reconnectDelay=Math.min(reconnectDelay*1.5,10000);};
+    ws.onerror=()=>{};
+    ws.onmessage=e=>{try{handleEvent(JSON.parse(e.data));}catch{}};
+  }
+  function handleEvent(msg){
+    const{event,data}=msg;
+    switch(event){
+      case 'state:snapshot':
+        if(data.taskDescription)$('taskDesc').textContent=data.taskDescription;
+        if(data.subtasks){state.subtasks=data.subtasks;renderSubtasks();}
+        if(data.tokenStats){state.tokenStats=data.tokenStats;updateHeader();}
+        if(data.mode==='running')switchToMonitor();
+        if(data.deployResult){state.deployResult=data.deployResult;updateDeployBanner();}
+        state.serverMode=data.mode||state.serverMode;
+        updateChatPlaceholder();
+        break;
+      case 'server:status':
+        state.serverMode=data.mode;
+        updateChatPlaceholder();
+        if(data.mode==='running'){switchToMonitor();}
+        else if(data.mode==='completed'||data.mode==='failed'){
+          $('newProjectBtn').style.display='';state.phase=data.mode;updateHeader();
+          if(data.mode==='completed'){
+            addChatMessage('system', 'Project completed. You can now request further changes.', Date.now());
+          }
+        }
+        break;
+      case 'orchestrator:phase':state.phase=data.phase;updateHeader();if(state.mode==='monitor')addEvent(data.phase,'phase','Phase: '+data.phase);break;
+      case 'orchestrator:plan':
+        if(data.subtasks){state.subtasks=data.subtasks;renderSubtasks();}
+        if(state.mode==='monitor')addEvent('plan','plan',data.subtasks.length+' subtasks planned');break;
+      case 'subtask:assigned':
+        for(const s of state.subtasks)if(s.id===data.subtaskId){s.status='in_progress';s.assignedWorker=data.workerIndex;}
+        renderSubtasks();state.workers[data.workerIndex]={status:'working',task:data.title||data.subtaskId.slice(0,8),tool:'starting...'};renderWorkers();
+        if(state.mode==='monitor')addEvent('assigned','assign','W'+data.workerIndex+' \u2192 '+(data.title||data.subtaskId.slice(0,8)));break;
+      case 'subtask:progress':
+        if(data.workerIndex!==undefined){state.workers[data.workerIndex].tool='step '+(data.step+1)+': '+data.toolName;renderWorkers();}break;
+      case 'subtask:completed':
+        for(const s of state.subtasks)if(s.id===data.subtaskId)s.status=data.status;
+        renderSubtasks();
+        for(let i=0;i<3;i++){const a=state.subtasks.find(s=>s.id===data.subtaskId);if(a&&a.assignedWorker===i)state.workers[i]={status:'idle',task:'-',tool:'-'};}
+        renderWorkers();
+        if(state.mode==='monitor')addEvent(data.status==='completed'?'\u2713 done':'\u2717 fail',data.status==='completed'?'complete':'failed',(data.summary||'').slice(0,120));
+        ws.send(JSON.stringify({type:'get:files'}));break;
+      case 'orchestrator:review':
+        if(data.decisions&&state.mode==='monitor')for(const d of data.decisions)addEvent(d.verdict,d.verdict==='accept'?'complete':'failed',d.subtaskId.slice(0,8)+(d.feedback?': '+d.feedback.slice(0,80):''));
+        break;
+      case 'orchestrator:iteration':state.iteration=data.iteration;updateHeader();break;
+      case 'file:written':if(state.mode==='monitor')addEvent('file','file',data.path+' (W'+(data.workerIndex!=null?data.workerIndex:'?')+')');ws.send(JSON.stringify({type:'get:files'}));break;
+      case 'file:list':state.files=data;renderFiles();break;
+      case 'file:content':showFilePreview(data.path,data.content);break;
+      case 'project:done':
+        state.phase='done';updateHeader();$('newProjectBtn').style.display='';
+        if(state.mode==='monitor')addEvent('DONE','done',data.summary||'Project complete');
+        for(let i=0;i<3;i++)state.workers[i]={status:'done',task:'-',tool:'-'};renderWorkers();
+        ws.send(JSON.stringify({type:'get:files'}));break;
+      case 'project:list':state.projects=data;renderProjects();updatePreviewSelector();break;
+      case 'project:created':
+        $('taskDesc').textContent=data.task;$('taskInput').value='';$('startBtn').disabled=false;
+        state.chatHistory=[];$('chatMessages').innerHTML='';
+        state.deployResult=null;$('deployBanner').classList.remove('visible');$('monitorView').classList.remove('has-banner');
+        switchToMonitor();
+        addChatMessage('system', 'Project started: ' + data.task, Date.now());
+        break;
+      case 'project:viewed':
+        $('taskDesc').textContent=data.task;$('taskInput').value='';$('startBtn').disabled=false;
+        state.chatHistory=[];$('chatMessages').innerHTML='';
+        state.deployResult=null;$('deployBanner').classList.remove('visible');$('monitorView').classList.remove('has-banner');
+        if(data.subtasks){state.subtasks=data.subtasks;renderSubtasks();}
+        switchToMonitor();
+        $('newProjectBtn').style.display='';
+        addChatMessage('system', 'Viewing project: ' + data.task, Date.now());
+        break;
+      case 'project:error':showToast(data.message);$('startBtn').disabled=false;break;
+      case 'settings:current':case 'settings:updated':populateSettings(data);break;
+      case 'tokens:update':state.tokenStats=data;updateHeader();break;
+      case 'rate-limit:wait':if(state.mode==='monitor')addEvent('rate-limit','error','Waiting '+Math.ceil((data.waitMs||0)/1000)+'s');break;
+      case 'llm:retry':if(state.mode==='monitor')addEvent('retry','error','Attempt '+data.attempt+'/'+data.maxRetries+': '+data.error);break;
+      // Chat events
+      case 'chat:response':
+        state.chatWaiting=false;
+        $('chatTyping').classList.remove('visible');
+        $('chatSendBtn').disabled=false;
+        if(data.reply) addChatMessage('orchestrator', data.reply, data.ts||Date.now());
+        break;
+      case 'chat:error':
+        state.chatWaiting=false;
+        $('chatTyping').classList.remove('visible');
+        $('chatSendBtn').disabled=false;
+        addChatMessage('system', 'Error: '+(data.error||'Unknown error'), Date.now());
+        break;
+      // Deploy events
+      case 'deploy:started':
+        $('deployBanner').classList.add('visible');
+        $('monitorView').classList.add('has-banner');
+        $('deployLabel').textContent='Deploying...';
+        $('deployLabel').classList.add('deploy-spinner');
+        $('deployLinks').innerHTML=esc(data.repoName||'');
+        addEvent('deploy','phase','Deploying to GitHub Pages...');
+        addChatMessage('system', 'Deploying to GitHub Pages...', Date.now());
+        break;
+      case 'deploy:complete':
+        state.deployResult={repoUrl:data.repoUrl,pagesUrl:data.pagesUrl};
+        $('deployLabel').textContent='Deployed';
+        $('deployLabel').classList.remove('deploy-spinner');
+        updateDeployBanner();
+        addEvent('deployed','done','Live at '+(data.pagesUrl||''));
+        addChatMessage('system', 'Deployed! Live at: ' + (data.pagesUrl||''), Date.now());
+        break;
+      case 'deploy:failed':
+        $('deployLabel').textContent='Deploy failed';
+        $('deployLabel').classList.remove('deploy-spinner');
+        $('deployLinks').innerHTML=esc(data.error||'');
+        addEvent('deploy fail','error',data.error||'');
+        addChatMessage('system', 'Deploy failed: '+(data.error||''), Date.now());
+        break;
+      case 'deploy:warning':
+        addEvent('deploy warn','error',data.message||'');
+        break;
+      // Backend events
+      case 'backend:info':
+        updateBackendPanel({ type: data.type, running: false });
+        break;
+      case 'backend:starting':
+        // Show starting status in panel
+        $('backendStatus').textContent = 'starting...';
+        $('backendStatus').className = 'backend-status stopped';
+        break;
+      case 'backend:started':
+        updateBackendPanel({ type: 'node', running: true, port: data.port, url: data.url });
+        break;
+      case 'backend:stopped':
+        updateBackendPanel({ type: 'node', running: false });
+        break;
+      case 'backend:status':
+        updateBackendPanel(data);
+        break;
+      case 'backend:error':
+        showToast(data.error || 'Backend error');
+        break;
+    }
+  }
+  setInterval(()=>{if(ws&&ws.readyState===1&&state.mode==='monitor')ws.send(JSON.stringify({type:'get:files'}));},10000);
+  connect();
+})();
+</script>
+</body>
+</html>

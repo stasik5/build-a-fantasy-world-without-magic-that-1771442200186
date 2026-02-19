@@ -1,0 +1,26 @@
+{
+  "name": "builder-swarm",
+  "version": "1.0.0",
+  "description": "Multi-agent builder swarm powered by GLM-5",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "tsc && cp src/web/dashboard.html dist/web/dashboard.html"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.7",
+    "openai": "^4.77.0",
+    "ora": "^8.1.1",
+    "uuid": "^9.0.1",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.12",
+    "@types/uuid": "^9.0.8",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
