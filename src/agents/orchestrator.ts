@@ -10,6 +10,8 @@ import { saveCheckpoint } from '../swarm/checkpoint.js';
 import { runWorker } from './worker.js';
 import { ui } from '../cli/ui.js';
 import { messageBus } from '../swarm/message-bus.js';
+import { analyzeProject, formatProjectMap } from '../tools/project-analyzer.js';
+import { verifyProject, formatVerificationResult } from '../tools/project-verifier.js';
 
 const ORCHESTRATOR_SYSTEM_PROMPT = `You are the Orchestrator of a multi-agent coding swarm. You manage a team of 3 worker agents that can read/write files, execute commands, and search code.
 
@@ -39,12 +41,32 @@ Guidelines for planning:
 - Order them logically with dependencies
 - Be very specific in descriptions - workers are coding agents that need clear instructions
 - Include setup tasks (package.json, configs) as early subtasks if needed
-- Avoid assigning subtasks that modify the same files to run concurrently`;
+- Avoid assigning subtasks that modify the same files to run concurrently
+- ALWAYS include a final "Integration & Testing" subtask that depends on all others. This subtask should:
+  - Verify all files work together (imports, exports, paths)
+  - Run any build/lint/test commands
+  - Fix any integration issues found
+- Each subtask description MUST include:
+  - The specific files to create or modify
+  - Clear success criteria (what "done" looks like)
+  - Any naming conventions or patterns to follow from earlier subtasks
+- When the task involves a framework (React, Express, etc.), name the framework and version in the first subtask
 
-const REVIEW_PROMPT = `Review the worker results below. For each completed subtask, decide whether to:
-- "accept": The work is satisfactory
-- "revise": The work needs changes (provide specific feedback)
-- "reassign": The work should be redone by a different worker
+Dependencies should be the TITLES of subtasks that must complete first. For example: "dependencies": ["Set up project structure"]`;
+
+const REVIEW_PROMPT = `Review the worker results below. For each completed subtask:
+
+1. Check: Does the summary indicate the stated task was actually accomplished?
+2. Check: Were the expected files created/modified (see artifacts)?
+3. Check: Are there any errors, warnings, or incomplete items mentioned?
+4. Check: Is the work consistent with other completed subtasks (imports, naming, APIs)?
+
+Decide for each:
+- "accept": Work is satisfactory and complete
+- "revise": Work needs changes — provide SPECIFIC feedback about what to fix (reference files and exact issues)
+- "reassign": Work is fundamentally wrong and should be redone
+
+IMPORTANT: If a worker reports errors or unresolved issues in their summary, do NOT accept. Mark as "revise" with feedback to fix them.
 
 Respond with ONLY this JSON format:
 {
@@ -57,18 +79,24 @@ Respond with ONLY this JSON format:
   ]
 }`;
 
-const FINAL_REVIEW_PROMPT = `All subtasks are marked as completed. Review the overall project state below.
+function buildFinalReviewPrompt(taskDescription: string): string {
+  return `All subtasks are marked as completed. Perform a final quality check:
 
-If the project is truly complete, respond with:
+1. Does every subtask's result indicate success (not errors)?
+2. Are all expected files present in the artifacts?
+3. Was there a testing/integration subtask, and did it pass?
+4. Does the completed work fully address the original task: "${taskDescription}"?
+
+If everything checks out:
 {
   "status": "done",
-  "summary": "Brief description of what was built"
+  "summary": "Brief description of what was built and how to run/use it"
 }
 
-If more work is needed, respond with:
+If issues remain, create focused fix-it subtasks (max 3):
 {
   "status": "needs_more",
-  "summary": "What's still missing",
+  "summary": "What's still missing or broken",
   "additionalSubtasks": [
     {
       "title": "...",
@@ -79,6 +107,7 @@ If more work is needed, respond with:
 }
 
 Respond with ONLY valid JSON.`;
+}
 
 const CHAT_SYSTEM_PROMPT = `You are the Orchestrator of a multi-agent coding swarm. The user is chatting with you about the current project.
 
@@ -183,11 +212,19 @@ export async function continueProject(
   const statusSummary = taskManager.getStatusSummary();
 
   messageBus.emit('orchestrator:phase', { phase: 'executing' });
+  ui.showOrchestratorThinking('Analyzing project...');
+  const projectMap = await analyzeProject(ctx.rootDir);
+  let projectContext = '';
+  if (projectMap) {
+    projectContext = `\n\n--- EXISTING PROJECT CONTEXT ---\n${formatProjectMap(projectMap)}\n--- END PROJECT CONTEXT ---\n`;
+    ui.showProjectAnalysis(projectMap.summary);
+  }
+
   ui.showOrchestratorThinking('Planning changes...');
 
   const planResponse = await askOrchestrator(
     ctx,
-    `[CONTINUATION]\nOriginal task: ${ctx.taskDescription}\n\nCurrent project state:\n${statusSummary}\n\nThe user has requested additional changes:\n${changeRequest}\n\nBreak these changes into new subtasks. Existing completed subtasks should NOT be repeated.`,
+    `[CONTINUATION]\nOriginal task: ${ctx.taskDescription}\n\nCurrent project state:\n${statusSummary}${projectContext}\n\nThe user has requested additional changes:\n${changeRequest}\n\nBreak these changes into new subtasks. Existing completed subtasks should NOT be repeated.`,
   );
 
   const plan = parseJSON<TaskPlan>(planResponse);
@@ -210,13 +247,35 @@ export async function continueProject(
     const ready = taskManager.getReadySubtasks();
 
     if (ready.length === 0 && taskManager.allCompleted()) {
+      // PHASE: VERIFICATION
+      messageBus.emit('orchestrator:phase', { phase: 'verifying' });
+      ui.showOrchestratorThinking('Verifying project (build/test)...');
+
+      const verification = await verifyProject(ctx.rootDir);
+      const verificationReport = formatVerificationResult(verification);
+      ui.showVerification(verification.passed, verificationReport);
+
+      if (!verification.passed) {
+        const fixPrompt = `The project build/test verification FAILED. Here are the errors:\n\n${verificationReport}\n\nCreate focused subtasks to fix these errors. Each subtask should reference the specific error and file. Respond with JSON:\n{\n  "subtasks": [\n    { "title": "Fix ...", "description": "...", "dependencies": [] }\n  ]\n}`;
+
+        const fixResponse = await askOrchestrator(ctx, fixPrompt);
+        const fixPlan = parseJSON<TaskPlan>(fixResponse);
+
+        if (fixPlan?.subtasks?.length) {
+          taskManager.addMoreSubtasks(fixPlan.subtasks);
+          ui.showPlan(ctx.subtasks);
+          saveCheckpoint(ctx);
+          continue;
+        }
+      }
+
       messageBus.emit('orchestrator:phase', { phase: 'final_review' });
       ui.showOrchestratorThinking('Final review...');
 
       const statusSummary = taskManager.getStatusSummary();
       const finalResponse = await askOrchestrator(
         ctx,
-        `${FINAL_REVIEW_PROMPT}\n\nProject status:\n${statusSummary}`,
+        `${buildFinalReviewPrompt(ctx.taskDescription)}\n\nProject status:\n${statusSummary}\n\nBuild/Test verification: ${verification.passed ? 'PASSED' : 'FAILED (errors were addressed in fix subtasks)'}\n${verificationReport}`,
       );
 
       const finalReview = parseJSON<FinalReview>(finalResponse);
@@ -303,7 +362,7 @@ export async function continueProject(
 
     const reviewStatus = taskManager.getStatusSummary();
     const reviewInput = results
-      .map((r) => `Subtask ${r.subtaskId}:\n  Status: ${r.status}\n  Summary: ${r.summary}\n  Files: ${r.artifacts.join(', ') || 'none'}`)
+      .map((r) => `Subtask ${r.subtaskId}:\n  Status: ${r.status}\n  Summary: ${r.summary.slice(0, 1500)}\n  Files: ${r.artifacts.join(', ') || 'none'}`)
       .join('\n\n');
 
     const reviewResponse = await askOrchestrator(
@@ -412,12 +471,22 @@ export async function runOrchestrator(
     });
     ui.showPlan(ctx.subtasks);
   } else {
+    // PHASE 0: ANALYZE EXISTING PROJECT (if applicable)
+    ui.showOrchestratorThinking('Analyzing project...');
+    const projectMap = await analyzeProject(ctx.rootDir);
+    let projectContext = '';
+    if (projectMap) {
+      projectContext = `\n\n--- EXISTING PROJECT CONTEXT ---\n${formatProjectMap(projectMap)}\n--- END PROJECT CONTEXT ---\n\nIMPORTANT: This is an EXISTING project. You MUST plan subtasks that work WITH the existing code. Workers should READ existing files before modifying them. Do not recreate files that already exist unless rewriting them is explicitly needed.\n`;
+      ctx.projectFileTree = projectMap.fileTree;
+      ui.showProjectAnalysis(projectMap.summary);
+    }
+
     // PHASE 1: PLAN
     ui.showOrchestratorThinking('Breaking down task...');
 
     const planResponse = await askOrchestrator(
       ctx,
-      `Break this task into subtasks:\n\n${ctx.taskDescription}`
+      `Break this task into subtasks:\n\n${ctx.taskDescription}${projectContext}`
     );
 
     const plan = parseJSON<TaskPlan>(planResponse);
@@ -442,13 +511,37 @@ export async function runOrchestrator(
 
     // Check if we're done
     if (ready.length === 0 && taskManager.allCompleted()) {
+      // PHASE: VERIFICATION — run build/test commands before final review
+      messageBus.emit('orchestrator:phase', { phase: 'verifying' });
+      ui.showOrchestratorThinking('Verifying project (build/test)...');
+
+      const verification = await verifyProject(ctx.rootDir);
+      const verificationReport = formatVerificationResult(verification);
+      ui.showVerification(verification.passed, verificationReport);
+
+      if (!verification.passed) {
+        // Create fix-it subtasks from verification errors
+        const fixPrompt = `The project build/test verification FAILED. Here are the errors:\n\n${verificationReport}\n\nCreate focused subtasks to fix these errors. Each subtask should reference the specific error and file. Respond with JSON:\n{\n  "subtasks": [\n    { "title": "Fix ...", "description": "...", "dependencies": [] }\n  ]\n}`;
+
+        const fixResponse = await askOrchestrator(ctx, fixPrompt);
+        const fixPlan = parseJSON<TaskPlan>(fixResponse);
+
+        if (fixPlan?.subtasks?.length) {
+          taskManager.addMoreSubtasks(fixPlan.subtasks);
+          ui.showPlan(ctx.subtasks);
+          saveCheckpoint(ctx);
+          continue; // Loop back to execute the fix subtasks
+        }
+      }
+
+      // Proceed to final review (with verification results)
       messageBus.emit('orchestrator:phase', { phase: 'final_review' });
       ui.showOrchestratorThinking('Final review...');
 
       const statusSummary = taskManager.getStatusSummary();
       const finalResponse = await askOrchestrator(
         ctx,
-        `${FINAL_REVIEW_PROMPT}\n\nProject status:\n${statusSummary}`
+        `${buildFinalReviewPrompt(ctx.taskDescription)}\n\nProject status:\n${statusSummary}\n\nBuild/Test verification: ${verification.passed ? 'PASSED' : 'FAILED (errors were addressed in fix subtasks)'}\n${verificationReport}`
       );
 
       const finalReview = parseJSON<FinalReview>(finalResponse);
@@ -540,7 +633,7 @@ export async function runOrchestrator(
 
     const statusSummary = taskManager.getStatusSummary();
     const reviewInput = results
-      .map((r) => `Subtask ${r.subtaskId}:\n  Status: ${r.status}\n  Summary: ${r.summary}\n  Files: ${r.artifacts.join(', ') || 'none'}`)
+      .map((r) => `Subtask ${r.subtaskId}:\n  Status: ${r.status}\n  Summary: ${r.summary.slice(0, 1500)}\n  Files: ${r.artifacts.join(', ') || 'none'}`)
       .join('\n\n');
 
     const reviewResponse = await askOrchestrator(

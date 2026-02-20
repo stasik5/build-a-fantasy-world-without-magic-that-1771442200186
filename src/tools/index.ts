@@ -5,17 +5,23 @@ import { writeFileTool } from './write-file.js';
 import { listDirectoryTool } from './list-directory.js';
 import { executeCommandTool } from './execute-command.js';
 import { searchFilesTool } from './search-files.js';
+import { patchFileTool } from './patch-file.js';
+import { webSearchTool } from './web-search.js';
+import { webReaderTool } from './web-reader.js';
+import { globFilesTool } from './glob-files.js';
 
 export const WORKER_TOOLS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read the contents of a file. Returns the file content as a string.',
+      description: 'Read the contents of a file. Optionally specify a line range for large files.',
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Relative path from project root' },
+          startLine: { type: 'number', description: 'Optional: first line to read (1-based). If omitted, reads from start.' },
+          endLine: { type: 'number', description: 'Optional: last line to read (1-based). If omitted, reads to end.' },
         },
         required: ['path'],
       },
@@ -79,6 +85,64 @@ export const WORKER_TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'patch_file',
+      description: 'Replace a specific text section in an existing file. Use this for small edits instead of rewriting the entire file with write_file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative path from project root' },
+          search: { type: 'string', description: 'Exact text to find in the file (must match exactly, including whitespace)' },
+          replace: { type: 'string', description: 'Text to replace it with' },
+        },
+        required: ['path', 'search', 'replace'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: 'Search the web for documentation, API references, tutorials, or error solutions. Use this when you need information about a library, framework, or technique you are unsure about.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query (e.g., "express.js middleware tutorial", "react useState hook API")' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_reader',
+      description: 'Read the content of a web page. Use this to fetch documentation pages, README files, or API reference URLs found via web_search.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Full URL of the web page to read' },
+        },
+        required: ['url'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'glob_files',
+      description: 'Find files matching a glob pattern. Use this to discover project structure, find all files of a type, or locate specific files. Examples: "src/**/*.ts", "**/*.test.js", "*.json"',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: 'Glob pattern to match files against. Supports *, **, and ? wildcards.' },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
 ];
 
 export async function executeTool(
@@ -96,7 +160,7 @@ export async function executeTool(
 
   switch (toolCall.function.name) {
     case 'read_file':
-      return readFileTool(projectRoot, args as { path: string });
+      return readFileTool(projectRoot, args as { path: string; startLine?: number; endLine?: number });
     case 'write_file':
       return writeFileTool(projectRoot, args as { path: string; content: string }, artifacts, workerIndex);
     case 'list_directory':
@@ -105,6 +169,14 @@ export async function executeTool(
       return executeCommandTool(projectRoot, args as { command: string });
     case 'search_files':
       return searchFilesTool(projectRoot, args as { pattern: string; path?: string });
+    case 'patch_file':
+      return patchFileTool(projectRoot, args as { path: string; search: string; replace: string }, artifacts, workerIndex);
+    case 'web_search':
+      return webSearchTool(args as { query: string; count?: number });
+    case 'web_reader':
+      return webReaderTool(args as { url: string });
+    case 'glob_files':
+      return globFilesTool(projectRoot, args as { pattern: string });
     default:
       return `Error: Unknown tool "${toolCall.function.name}"`;
   }

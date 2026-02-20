@@ -181,7 +181,7 @@ async function startProject(task: string, maxIterations?: number): Promise<void>
 
   const iterations = maxIterations ?? cfg.MAX_ORCHESTRATOR_ITERATIONS;
 
-  const projectDir = createProjectDir(task);
+  const projectDir = await createProjectDir(task);
   const ctx: ProjectContext = {
     id: crypto.randomUUID(),
     rootDir: projectDir,

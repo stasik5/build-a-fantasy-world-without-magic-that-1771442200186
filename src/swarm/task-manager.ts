@@ -21,14 +21,20 @@ export class TaskManager {
         description: s.description,
         dependencies: s.dependencies
           .map((dep) => {
-            // Dependencies can be by index (number) or by title (string)
+            // Prefer title-based matching (among current plan's subtasks)
+            const planMatch = plan.subtasks.findIndex((t, j) => t.title === dep && j !== i);
+            if (planMatch !== -1 && idMap.has(planMatch)) {
+              return idMap.get(planMatch)!;
+            }
+            // Then check existing subtasks by title
+            const existingMatch = this.ctx.subtasks.find((t) => t.title === dep);
+            if (existingMatch) return existingMatch.id;
+            // Fallback to index-based (for backward compatibility)
             const depIndex = parseInt(dep, 10);
             if (!isNaN(depIndex) && idMap.has(depIndex)) {
               return idMap.get(depIndex)!;
             }
-            // Try to match by title
-            const match = this.ctx.subtasks.find((t) => t.title === dep);
-            return match?.id ?? '';
+            return '';
           })
           .filter(Boolean),
         assignedWorker: null,
@@ -72,7 +78,8 @@ export class TaskManager {
     const subtask = this.ctx.subtasks.find((t) => t.id === result.subtaskId);
     if (!subtask) return;
 
-    subtask.result = result.summary;
+    // Cap stored result to avoid context bloat in orchestrator messages
+    subtask.result = result.summary.slice(0, 2000);
     subtask.artifacts = [...subtask.artifacts, ...result.artifacts];
 
     if (result.status === 'completed') {
@@ -131,7 +138,7 @@ export class TaskManager {
 
       lines.push(`${statusIcon} ${subtask.title} (id: ${subtask.id})`);
       if (subtask.result) {
-        lines.push(`  Result: ${subtask.result.slice(0, 200)}`);
+        lines.push(`  Result: ${subtask.result.slice(0, 400)}`);
       }
       if (subtask.artifacts.length > 0) {
         lines.push(`  Files: ${subtask.artifacts.join(', ')}`);

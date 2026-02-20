@@ -53,8 +53,8 @@ export async function executeCommandTool(
         },
         (error, stdout, stderr) => {
           const output: string[] = [];
-          if (stdout) output.push(`STDOUT:\n${truncate(stdout, 8000)}`);
-          if (stderr) output.push(`STDERR:\n${truncate(stderr, 2000)}`);
+          if (stdout) output.push(`STDOUT:\n${truncate(stdout, 15000)}`);
+          if (stderr) output.push(`STDERR:\n${truncate(stderr, 5000)}`);
           if (error) output.push(`EXIT CODE: ${error.code ?? 1}`);
           else output.push(`EXIT CODE: 0`);
           resolve(output.join('\n'));

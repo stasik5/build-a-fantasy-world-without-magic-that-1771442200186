@@ -34,6 +34,15 @@ export const ui = {
     console.log('');
   },
 
+  showProjectAnalysis(summary: string): void {
+    stopSpinner();
+    console.log(chalk.cyan.bold('\n  Project Analysis:'));
+    for (const line of summary.split('\n')) {
+      console.log(chalk.white(`    ${line}`));
+    }
+    console.log('');
+  },
+
   showPlan(subtasks: Subtask[]): void {
     stopSpinner();
     console.log(chalk.cyan.bold('\n  Orchestrator Plan:'));
@@ -103,6 +112,27 @@ export const ui = {
       (failed > 0 ? chalk.red(` (${failed} failed)`) : '') +
       (pending > 0 ? chalk.yellow(` (${pending} pending)`) : '')
     );
+  },
+
+  showVerification(passed: boolean, report: string): void {
+    stopSpinner();
+    const icon = passed ? chalk.green.bold('PASS') : chalk.red.bold('FAIL');
+    console.log(chalk.cyan.bold(`\n  Build/Test Verification: `) + icon);
+    // Show truncated report
+    const lines = report.split('\n').slice(0, 20);
+    for (const line of lines) {
+      if (line.includes('[FAIL]')) {
+        console.log(chalk.red(`    ${line}`));
+      } else if (line.includes('[PASS]')) {
+        console.log(chalk.green(`    ${line}`));
+      } else {
+        console.log(chalk.dim(`    ${line}`));
+      }
+    }
+    if (report.split('\n').length > 20) {
+      console.log(chalk.dim(`    ... (${report.split('\n').length - 20} more lines)`));
+    }
+    console.log('');
   },
 
   showCompletion(summary: string, projectDir: string): void {

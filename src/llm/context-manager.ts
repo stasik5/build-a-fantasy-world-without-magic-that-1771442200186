@@ -3,8 +3,8 @@ import { chatCompletion } from './client.js';
 
 // Rough estimate: 1 token ~= 4 chars for English text
 const CHARS_PER_TOKEN = 4;
-const MAX_CONTEXT_CHARS = 100_000; // ~25K tokens, conservative for most models
-const SUMMARIZE_THRESHOLD = 80_000; // Start summarizing at ~20K tokens
+const MAX_CONTEXT_CHARS = 80_000; // ~20K tokens, conservative for most models
+const SUMMARIZE_THRESHOLD = 50_000; // Start summarizing at ~12.5K tokens to stay lean
 
 function estimateChars(messages: ChatMessage[]): number {
   let total = 0;
@@ -32,9 +32,9 @@ export async function manageContext(messages: ChatMessage[]): Promise<ChatMessag
     return messages; // Within budget
   }
 
-  // Preserve: system prompt (index 0) + last 6 messages (3 exchanges)
+  // Preserve: system prompt (index 0) + last 10 messages (5 exchanges)
   const systemPrompt = messages[0]!;
-  const recentCount = Math.min(6, messages.length - 1);
+  const recentCount = Math.min(10, messages.length - 1);
   const recentMessages = messages.slice(-recentCount);
   const middleMessages = messages.slice(1, messages.length - recentCount);
 
@@ -47,7 +47,7 @@ export async function manageContext(messages: ChatMessage[]): Promise<ChatMessag
     .map((m) => {
       const role = 'role' in m ? m.role : 'unknown';
       const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-      return `[${role}]: ${content?.slice(0, 500) ?? ''}`;
+      return `[${role}]: ${content ?? ''}`;
     })
     .join('\n');
 
@@ -56,12 +56,12 @@ export async function manageContext(messages: ChatMessage[]): Promise<ChatMessag
       [
         {
           role: 'system',
-          content: 'Summarize the following conversation history concisely. Focus on: decisions made, subtasks planned/completed, key results, and current project state. Output ONLY the summary, no preamble.',
+          content: 'Summarize the following conversation history concisely. You MUST preserve:\n- The original task description and requirements\n- All subtask plans and their outcomes (accepted/revised/failed)\n- Key architectural decisions (frameworks, file structure, naming patterns)\n- Any unresolved issues or errors\n- Files created and their purposes\nOutput ONLY the summary.',
         },
-        { role: 'user', content: middleText.slice(0, 30_000) },
+        { role: 'user', content: middleText.slice(0, 50_000) },
       ],
       undefined,
-      { temperature: 0.1, maxTokens: 1024 }
+      { temperature: 0.1, maxTokens: 2048 }
     );
 
     const summary = summaryResponse.choices[0]?.message?.content ?? 'Previous context was summarized.';

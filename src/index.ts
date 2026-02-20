@@ -59,7 +59,7 @@ const program = new Command()
       ui.showResuming(ctx.rootDir);
     } else {
       // Fresh run
-      const projectDir = createProjectDir(task!);
+      const projectDir = await createProjectDir(task!);
       ui.showProjectDir(projectDir);
 
       ctx = {
