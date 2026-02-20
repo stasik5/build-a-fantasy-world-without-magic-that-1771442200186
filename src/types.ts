@@ -23,6 +23,8 @@ export interface ProjectContext {
   orchestratorMessages: ChatMessage[];
   /** Structured map of existing project files, set during pre-planning analysis */
   projectFileTree?: string;
+  /** Summary of the pre-build planning conversation (if interactive mode was used) */
+  planningContext?: string;
 }
 
 export type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;

@@ -167,7 +167,7 @@ function listProjects(): ProjectSummary[] {
   });
 }
 
-async function startProject(task: string, maxIterations?: number): Promise<void> {
+async function startProject(task: string, maxIterations?: number, existingDir?: string): Promise<void> {
   if (serverMode === 'running') {
     broadcastEvent('project:error', { message: 'A project is already running.' });
     return;
@@ -181,7 +181,16 @@ async function startProject(task: string, maxIterations?: number): Promise<void>
 
   const iterations = maxIterations ?? cfg.MAX_ORCHESTRATOR_ITERATIONS;
 
-  const projectDir = await createProjectDir(task);
+  let projectDir: string;
+  if (existingDir) {
+    projectDir = path.resolve(existingDir);
+    if (!fs.existsSync(projectDir) || !fs.statSync(projectDir).isDirectory()) {
+      broadcastEvent('project:error', { message: `Directory does not exist: ${projectDir}` });
+      return;
+    }
+  } else {
+    projectDir = await createProjectDir(task);
+  }
   const ctx: ProjectContext = {
     id: crypto.randomUUID(),
     rootDir: projectDir,
@@ -641,7 +650,7 @@ async function handleClientMessage(ws: WebSocket, raw: string): Promise<void> {
         break;
       case 'create:project':
         if (msg.task) {
-          startProject(msg.task, msg.maxIterations);
+          startProject(msg.task, msg.maxIterations, msg.dir);
         }
         break;
       case 'resume:project':
@@ -758,8 +767,8 @@ export function startWebServer(port: number): Promise<http.Server> {
             jsonResponse(res, 400, { error: 'task is required' });
             return;
           }
-          await startProject(body.task, body.maxIterations);
-          jsonResponse(res, 202, { status: 'started', task: body.task });
+          await startProject(body.task, body.maxIterations, body.dir);
+          jsonResponse(res, 202, { status: 'started', task: body.task, dir: body.dir });
         } else if (req.method === 'POST' && pathname === '/api/projects/resume') {
           const body = await parseBody(req);
           if (!body.dirPath) {

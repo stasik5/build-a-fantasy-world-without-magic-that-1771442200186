@@ -484,9 +484,15 @@ export async function runOrchestrator(
     // PHASE 1: PLAN
     ui.showOrchestratorThinking('Breaking down task...');
 
+    // Include planning conversation context if available (from interactive session)
+    let planningNote = '';
+    if (ctx.planningContext) {
+      planningNote = `\n\n--- PLANNING CONVERSATION ---\nThe user discussed this project with a planning assistant before you. Here are the key decisions and requirements from that conversation:\n${ctx.planningContext}\n--- END PLANNING CONVERSATION ---\n\nUse these details to inform your subtask breakdown. The user has already thought through requirements — respect their decisions.\n`;
+    }
+
     const planResponse = await askOrchestrator(
       ctx,
-      `Break this task into subtasks:\n\n${ctx.taskDescription}${projectContext}`
+      `Break this task into subtasks:\n\n${ctx.taskDescription}${projectContext}${planningNote}`
     );
 
     const plan = parseJSON<TaskPlan>(planResponse);
