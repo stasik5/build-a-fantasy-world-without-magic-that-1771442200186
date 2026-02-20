@@ -145,6 +145,9 @@
     background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px;
     padding: 12px; margin-bottom: 12px;
   }
+  .project-backend-panel {
+    margin: 0 0 8px 0; flex-shrink: 0;
+  }
   .backend-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .backend-title { font-size: 11px; font-weight: bold; text-transform: uppercase; color: var(--text-dim); }
   .backend-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
@@ -183,10 +186,32 @@
 
   /* Monitor */
   #monitorView {
-    display: none; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
-    flex: 1; min-height: 0; gap: 1px; background: var(--border); overflow: hidden;
+    display: none;
+    flex: 1; min-height: 0; background: var(--bg); overflow: hidden;
+    flex-direction: column;
   }
-  .panel { background: var(--bg); display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+  .monitor-row { display: flex; flex: 1; min-height: 0; min-height: 100px; }
+  .panel {
+    background: var(--bg); display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+    min-width: 200px; min-height: 100px;
+  }
+
+  /* Resize handles */
+  .resize-handle {
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+    z-index: 10;
+    transition: background 0.15s;
+  }
+  .resize-handle:hover, .resize-handle.dragging { background: var(--accent); }
+  .resize-handle-h {
+    width: 4px;
+    cursor: col-resize;
+  }
+  .resize-handle-v {
+    height: 4px;
+    cursor: row-resize;
+  }
   .panel-header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 8px 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); flex-shrink: 0;
@@ -245,7 +270,7 @@
     background: var(--accent); color: #fff; border-radius: 8px; margin-left: 4px;
   }
 
-  .tab-content { display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column; }
+  .tab-content { display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column; height: 100%; }
   .tab-content.active { display: flex; }
 
   .chat-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
@@ -291,6 +316,24 @@
   .event-type.info { color: var(--text-dim); }
   .event-msg { color: var(--text); flex: 1; }
 
+  /* Preview Tab */
+  .preview-tab-content { display: flex; flex-direction: column; height: 100%; overflow: hidden; flex: 1; }
+  .preview-tab-header {
+    display: flex; align-items: center; justify-content: space-between; padding: 8px 12px;
+    background: var(--bg-secondary); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .preview-label { font-size: 11px; font-weight: bold; text-transform: uppercase; color: var(--text-dim); }
+  .preview-tab-actions { display: flex; align-items: center; gap: 12px; }
+  .preview-tab-frame-container { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--bg-tertiary); overflow: hidden; }
+  .preview-tab-frame { flex: 1 1 auto; width: 100%; min-height: 0; border: none; background: #fff; }
+  .preview-tab-frame.hidden { display: none; }
+  .preview-tab-empty {
+    flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); font-style: italic; font-size: 12px; text-align: center;
+    min-height: 0;
+  }
+  .preview-tab-empty.hidden { display: none; }
+
   /* Settings Drawer */
   .drawer-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 50; display: none; }
   .drawer-backdrop.open { display: block; }
@@ -332,6 +375,82 @@
     font-size: 11px; color: var(--accent); text-transform: uppercase; font-weight: bold;
     margin: 16px 0 8px; padding-top: 12px; border-top: 1px solid var(--border);
   }
+
+  /* Planner Chat */
+  .planner-card {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 24px; display: flex; flex-direction: column; height: 400px;
+  }
+  .planner-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .planner-header h2 { color: var(--text-bright); font-size: 14px; margin: 0; }
+  .planner-status { font-size: 11px; color: var(--text-dim); }
+  .planner-status.ready { color: var(--green); font-weight: bold; }
+  .planner-messages { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+  .planner-messages::-webkit-scrollbar { width: 6px; }
+  .planner-messages::-webkit-scrollbar-track { background: transparent; }
+  .planner-messages::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
+  .planner-msg { margin-bottom: 10px; }
+  .planner-msg .msg-sender { font-size: 10px; text-transform: uppercase; font-weight: bold; margin-bottom: 2px; }
+  .planner-msg .msg-sender.user { color: var(--accent); }
+  .planner-msg .msg-sender.planner { color: var(--purple); }
+  .planner-msg .msg-sender.tool { color: var(--yellow); }
+  .planner-msg .msg-body { font-size: 12px; color: var(--text); line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+  .planner-msg .msg-body.tool-body { color: var(--text-dim); font-size: 11px; }
+  .planner-input-row {
+    display: flex; gap: 6px; padding: 12px; border-top: 1px solid var(--border);
+    background: var(--bg-tertiary); flex-shrink: 0;
+  }
+  .planner-input-row input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 4px; font-family: inherit; font-size: 13px;
+  }
+  .planner-input-row input:focus { outline: none; border-color: var(--accent); }
+  .planner-input-row button {
+    background: var(--accent); color: #fff; border: none; padding: 8px 16px; border-radius: 4px;
+    cursor: pointer; font-family: inherit; font-size: 13px; font-weight: bold; flex-shrink: 0;
+  }
+  .planner-input-row button:hover { opacity: 0.9; }
+  .planner-input-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .planner-input-row .btn-start {
+    background: var(--green);
+  }
+  .planner-typing { padding: 4px 12px; font-size: 11px; color: var(--purple); display: none; }
+  .planner-typing.visible { display: block; }
+  .planner-state-info {
+    display: flex; gap: 16px; padding: 8px 12px; background: var(--bg-tertiary);
+    border-top: 1px solid var(--border); font-size: 11px; flex-shrink: 0;
+  }
+  .planner-state-info .state-item { display: flex; gap: 4px; }
+  .planner-state-info .state-label { color: var(--text-dim); }
+  .planner-state-info .state-value { color: var(--text-bright); }
+
+  /* Delete confirmation modal */
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .modal-overlay.visible { display: flex; }
+  .modal {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; max-width: 400px; width: 90%;
+  }
+  .modal h3 { color: var(--text-bright); margin: 0 0 8px 0; font-size: 16px; }
+  .modal p { color: var(--text-dim); margin: 0 0 16px 0; font-size: 13px; }
+  .modal input {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg); color: var(--text); font-family: inherit; font-size: 14px;
+    margin-bottom: 16px; box-sizing: border-box;
+  }
+  .modal input:focus { outline: none; border-color: var(--purple); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-actions button { padding: 8px 16px; border-radius: 4px; font-size: 13px; cursor: pointer; }
+  .btn-danger { background: #dc3545; border: none; color: white; }
+  .btn-danger:hover { background: #c82333; }
+  .btn-danger:disabled { background: var(--bg-tertiary); color: var(--text-dim); cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -360,6 +479,20 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Delete confirmation modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>Delete Project</h3>
+    <p id="deleteModalText">This will permanently delete the project folder and all its contents.</p>
+    <p>Type <strong>sure</strong> to confirm:</p>
+    <input type="text" id="deleteConfirmInput" placeholder="Type 'sure' to confirm..." />
+    <div class="modal-actions">
+      <button class="btn-secondary" id="deleteCancelBtn">Cancel</button>
+      <button class="btn-danger" id="deleteConfirmBtn" disabled>Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- LOBBY -->
 <div id="lobbyView">
   <div class="lobby-tabs">
@@ -370,8 +503,33 @@
     <!-- Projects Tab -->
     <div class="lobby-tab-content active" data-lobby-tab="projects">
       <div class="lobby-section">
-        <div class="new-project-card">
-          <h2>New Project</h2>
+        <!-- Planner Chat Interface -->
+        <div class="planner-card" id="plannerCard">
+          <div class="planner-header">
+            <h2>New Project</h2>
+            <span class="planner-status" id="plannerStatus">Describe what you want to build</span>
+          </div>
+          <div class="planner-messages" id="plannerMessages">
+            <div class="planner-msg">
+              <div class="msg-sender planner">Planner</div>
+              <div class="msg-body">What would you like to build? Just describe it - mention a folder path if you want to work on an existing project.</div>
+            </div>
+          </div>
+          <div class="planner-typing" id="plannerTyping">Planner is thinking...</div>
+          <div class="planner-state-info" id="plannerStateInfo" style="display:none">
+            <div class="state-item"><span class="state-label">Task:</span><span class="state-value" id="plannerTask">-</span></div>
+            <div class="state-item"><span class="state-label">Directory:</span><span class="state-value" id="plannerDir">-</span></div>
+          </div>
+          <div class="planner-input-row">
+            <input type="text" id="plannerInput" placeholder="Describe what you want to build..." />
+            <button id="plannerSendBtn">Send</button>
+            <button id="plannerBuildBtn" class="btn-start" style="display:none">Start Build</button>
+          </div>
+        </div>
+
+        <!-- Legacy direct start (hidden by default) -->
+        <div class="new-project-card" id="directStartCard" style="display:none">
+          <h2>Direct Start</h2>
           <div class="form-group"><label>Task Description</label><textarea id="taskInput" placeholder="Describe what you want to build..."></textarea></div>
           <div class="form-row">
             <div class="form-group"><label>Max Iterations</label><input type="number" id="maxIterInput" value="50" min="1" max="200"/></div>
@@ -430,43 +588,86 @@
 
 <!-- MONITOR -->
 <div id="monitorView">
-  <!-- Top-left: Subtasks -->
-  <div class="panel">
-    <div class="panel-header"><span class="panel-title">Subtasks</span><span class="panel-count" id="subtaskCount">0/0</span></div>
-    <div class="panel-body" id="subtaskList"></div>
-  </div>
-  <!-- Top-right: Workers -->
-  <div class="panel">
-    <div class="panel-header"><span class="panel-title">Workers</span></div>
-    <div class="panel-body"><div class="workers" id="workerCards">
-      <div class="worker-card" id="worker0"><div class="worker-header"><span class="worker-name w0">Worker 0</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
-      <div class="worker-card" id="worker1"><div class="worker-header"><span class="worker-name w1">Worker 1</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
-      <div class="worker-card" id="worker2"><div class="worker-header"><span class="worker-name w2">Worker 2</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
-    </div></div>
-  </div>
-  <!-- Bottom-left: Files -->
-  <div class="panel">
-    <div class="panel-header"><span class="panel-title">Files</span><span class="panel-count" id="fileCount">0</span></div>
-    <div class="panel-body" id="filePanel"><ul class="file-tree" id="fileTree"></ul><div class="file-preview" id="filePreview" style="display:none"><div class="file-preview-header"><span id="previewName">-</span><span id="previewSize">-</span></div><pre id="previewContent"></pre></div></div>
-  </div>
-  <!-- Bottom-right: Chat + Events (tabbed) -->
-  <div class="panel chat-panel">
-    <div class="panel-tabs">
-      <div class="panel-tab active" data-tab="chat">Chat</div>
-      <div class="panel-tab" data-tab="events">Events <span class="tab-badge" id="eventBadge" style="display:none">0</span></div>
+  <!-- Top row -->
+  <div class="monitor-row" id="monitorRowTop">
+    <!-- Top-left: Subtasks -->
+    <div class="panel" id="panelSubtasks" style="flex: 1;">
+      <div class="panel-header"><span class="panel-title">Subtasks</span><span class="panel-count" id="subtaskCount">0/0</span></div>
+      <div class="panel-body" id="subtaskList"></div>
     </div>
-    <!-- Chat tab -->
-    <div class="tab-content active" data-tab="chat">
-      <div class="chat-messages" id="chatMessages"></div>
-      <div class="chat-typing" id="chatTyping">Orchestrator is thinking...</div>
-      <div class="chat-input-row">
-        <input type="text" id="chatInput" placeholder="Ask the orchestrator about the project..." />
-        <button id="chatSendBtn">Send</button>
+    <div class="resize-handle resize-handle-h" data-direction="h" data-row="top"></div>
+    <!-- Top-right: Workers -->
+    <div class="panel" id="panelWorkers" style="flex: 1;">
+      <div class="panel-header"><span class="panel-title">Workers</span></div>
+      <div class="panel-body"><div class="workers" id="workerCards">
+        <div class="worker-card" id="worker0"><div class="worker-header"><span class="worker-name w0">Worker 0</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
+        <div class="worker-card" id="worker1"><div class="worker-header"><span class="worker-name w1">Worker 1</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
+        <div class="worker-card" id="worker2"><div class="worker-header"><span class="worker-name w2">Worker 2</span><span class="worker-status">idle</span></div><div class="worker-task">-</div><div class="worker-tool">-</div></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="resize-handle resize-handle-v" data-direction="v"></div>
+  <!-- Bottom row -->
+  <div class="monitor-row" id="monitorRowBottom">
+    <!-- Bottom-left: Files -->
+    <div class="panel" id="panelFiles" style="flex: 1;">
+      <div class="panel-header"><span class="panel-title">Files</span><span class="panel-count" id="fileCount">0</span></div>
+      <div class="panel-body" id="filePanel"><ul class="file-tree" id="fileTree"></ul><div class="file-preview" id="filePreview" style="display:none"><div class="file-preview-header"><span id="previewName">-</span><span id="previewSize">-</span></div><pre id="previewContent"></pre></div></div>
+    </div>
+    <div class="resize-handle resize-handle-h" data-direction="h" data-row="bottom"></div>
+    <!-- Bottom-right: Chat + Events + Preview (tabbed) -->
+    <div class="panel chat-panel" id="panelChat" style="flex: 1;">
+      <div class="panel-tabs">
+        <div class="panel-tab active" data-tab="chat">Chat</div>
+        <div class="panel-tab" data-tab="events">Events <span class="tab-badge" id="eventBadge" style="display:none">0</span></div>
+        <div class="panel-tab" data-tab="preview">Preview</div>
       </div>
-    </div>
-    <!-- Events tab -->
-    <div class="tab-content" data-tab="events">
-      <div class="panel-body" id="eventLog"></div>
+      <!-- Chat tab -->
+      <div class="tab-content active" data-tab="chat">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-typing" id="chatTyping">Orchestrator is thinking...</div>
+        <div class="chat-input-row">
+          <input type="text" id="chatInput" placeholder="Ask the orchestrator about the project..." />
+          <button id="chatSendBtn">Send</button>
+        </div>
+      </div>
+      <!-- Events tab -->
+      <div class="tab-content" data-tab="events">
+        <div class="panel-body" id="eventLog"></div>
+      </div>
+      <!-- Preview tab -->
+      <div class="tab-content" data-tab="preview">
+        <div class="preview-tab-content">
+          <div class="preview-tab-header">
+            <span class="preview-label">Project Preview</span>
+            <div class="preview-tab-actions">
+              <button class="btn-secondary" id="refreshProjectPreviewBtn">Refresh</button>
+              <a class="open-tab-link" id="openPreviewTab" href="#" target="_blank">Open in new tab</a>
+            </div>
+          </div>
+          <!-- Backend panel for project view -->
+          <div class="backend-panel project-backend-panel" id="projectBackendPanel" style="display:none">
+            <div class="backend-header">
+              <span class="backend-title">Backend Server</span>
+              <span class="backend-status" id="projectBackendStatus">detecting...</span>
+            </div>
+            <div class="backend-info">
+              <span class="backend-type" id="projectBackendType">-</span>
+              <span class="backend-url" id="projectBackendUrl" style="display:none">
+                <a href="#" id="projectBackendUrlLink" target="_blank">-</a>
+              </span>
+              <div class="backend-actions">
+                <button class="btn-secondary" id="startProjectBackendBtn">Start</button>
+                <button class="btn-secondary" id="stopProjectBackendBtn" style="display:none">Stop</button>
+              </div>
+            </div>
+          </div>
+          <div class="preview-tab-frame-container">
+            <iframe id="projectPreviewFrame" class="preview-tab-frame"></iframe>
+            <div class="preview-tab-empty" id="projectPreviewEmpty">Project preview will appear here once files are created.</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -505,14 +706,7 @@
 
 <script>
 (function(){
-  const state = {
-    mode:'lobby', serverMode:'idle', subtasks:[], phase:'idle',
-    tokenStats:{totalTokens:0,callCount:0}, iteration:0,
-    files:[], events:[], selectedFile:null, projects:[],
-    workers:[{status:'idle',task:'-',tool:'-'},{status:'idle',task:'-',tool:'-'},{status:'idle',task:'-',tool:'-'}],
-    chatHistory:[], chatWaiting:false, activeTab:'chat', unreadEvents:0,
-    deployResult:null, autoDeployEnabled:false,
-  };
+  // Helper functions - MUST be defined first
   const $=id=>document.getElementById(id);
   const esc=s=>s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';
   const fmtTime=ts=>new Date(ts).toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -520,6 +714,94 @@
   const STATUS_ICONS={pending:'\u25CB',in_progress:'\u25C9',completed:'\u2713',failed:'\u2717'};
   const PROJ_ICONS={completed:'\u2713',partial:'!','in-progress':'\u25CB',unknown:'?',corrupted:'\u2717'};
   const PROJ_COLORS={completed:'var(--green)',partial:'var(--yellow)','in-progress':'var(--text-dim)',unknown:'var(--text-dim)',corrupted:'var(--red)'};
+
+  const state = {
+    mode:'lobby', serverMode:'idle', subtasks:[], phase:'idle',
+    tokenStats:{totalTokens:0,callCount:0}, iteration:0,
+    files:[], events:[], selectedFile:null, projects:[],
+    workers:[{status:'idle',task:'-',tool:'-'},{status:'idle',task:'-',tool:'-'},{status:'idle',task:'-',tool:'-'}],
+    chatHistory:[], chatWaiting:false, activeTab:'chat', unreadEvents:0,
+    deployResult:null, autoDeployEnabled:false,
+    // Current project
+    projectRoot: null,
+    projectName: null,
+    // Planner state
+    plannerReady: false,
+    plannerTask: '',
+    plannerDir: '',
+    plannerWaiting: false,
+  };
+
+  // --- Planner Chat ---
+  function addPlannerMessage(role, content, isTool = false) {
+    const container = $('plannerMessages');
+    const div = document.createElement('div');
+    div.className = 'planner-msg';
+    const senderClass = role === 'user' ? 'user' : role === 'tool' ? 'tool' : 'planner';
+    const bodyClass = isTool ? 'msg-body tool-body' : 'msg-body';
+    div.innerHTML = '<div class="msg-sender '+senderClass+'">'+esc(role)+'</div>' +
+      '<div class="'+bodyClass+'">'+esc(content)+'</div>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function updatePlannerUI() {
+    const stateInfo = $('plannerStateInfo');
+    const buildBtn = $('plannerBuildBtn');
+    const status = $('plannerStatus');
+    const taskSpan = $('plannerTask');
+    const dirSpan = $('plannerDir');
+
+    if (state.plannerTask || state.plannerDir) {
+      stateInfo.style.display = 'flex';
+      taskSpan.textContent = state.plannerTask || '(not set)';
+      dirSpan.textContent = state.plannerDir || '(new project)';
+    } else {
+      stateInfo.style.display = 'none';
+    }
+
+    if (state.plannerReady) {
+      status.textContent = 'Ready to build';
+      status.className = 'planner-status ready';
+      buildBtn.style.display = 'inline-block';
+    } else {
+      status.textContent = 'Describe what you want to build';
+      status.className = 'planner-status';
+      buildBtn.style.display = 'none';
+    }
+  }
+
+  function sendPlannerMessage() {
+    const input = $('plannerInput');
+    const msg = input.value.trim();
+    if (!msg || state.plannerWaiting) return;
+
+    input.value = '';
+    addPlannerMessage('user', msg);
+    state.plannerWaiting = true;
+    $('plannerTyping').classList.add('visible');
+    $('plannerSendBtn').disabled = true;
+
+    ws.send(JSON.stringify({ type: 'planner:send', message: msg }));
+  }
+
+  $('plannerSendBtn').addEventListener('click', sendPlannerMessage);
+  $('plannerInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendPlannerMessage(); });
+
+  $('plannerBuildBtn').addEventListener('click', () => {
+    if (!state.plannerReady) return;
+    ws.send(JSON.stringify({
+      type: 'planner:build',
+      maxIterations: parseInt($('maxIterInput').value) || 50
+    }));
+    // Reset planner state
+    state.plannerReady = false;
+    state.plannerTask = '';
+    state.plannerDir = '';
+    state.plannerWaiting = false;
+    $('plannerMessages').innerHTML = '<div class="planner-msg"><div class="msg-sender planner">Planner</div><div class="msg-body">What would you like to build? Just describe it - mention a folder path if you want to work on an existing project.</div></div>';
+    updatePlannerUI();
+  });
 
   // --- Tab switching ---
   document.querySelectorAll('.panel-tab').forEach(tab => {
@@ -692,16 +974,55 @@
     $('phaseBadge').style.display='none';$('statsGroup').style.display='none';
     $('callsStat').style.display='none';$('iterStat').style.display='none';
     $('newProjectBtn').style.display='none';$('taskDesc').textContent='';
+    // Reset project backend state
+    projectBackendUrl = null;
+    lastBackendCheckProject = null;
+    $('projectBackendPanel').style.display = 'none';
     $('deployBanner').classList.remove('visible');$('monitorView').classList.remove('has-banner');
     if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'get:projects'}));
   }
   function switchToMonitor(){
     state.mode='monitor';
-    $('lobbyView').style.display='none';$('monitorView').style.display='grid';
+    $('lobbyView').style.display='none';$('monitorView').style.display='flex';
     $('phaseBadge').style.display='';$('statsGroup').style.display='';
     $('callsStat').style.display='';$('iterStat').style.display='';
     state.events=[];$('eventLog').innerHTML='';state.unreadEvents=0;
     $('eventBadge').style.display='none';
+    // Initialize panel sizes on first view
+    initializePanelSizes();
+  }
+
+  function initializePanelSizes() {
+    const container = $('monitorView');
+    const topRow = $('monitorRowTop');
+    const bottomRow = $('monitorRowBottom');
+
+    // Only initialize if no explicit sizes set yet
+    if (topRow.style.height) return;
+
+    const containerWidth = container.offsetWidth;
+    const containerHeight = container.offsetHeight;
+    const handleSize = 4;
+    const halfWidth = (containerWidth - handleSize) / 2;
+    const halfHeight = (containerHeight - handleSize) / 2;
+
+    // Set top row panels
+    $('panelSubtasks').style.flex = 'none';
+    $('panelSubtasks').style.width = halfWidth + 'px';
+    $('panelWorkers').style.flex = 'none';
+    $('panelWorkers').style.width = halfWidth + 'px';
+
+    // Set bottom row panels
+    $('panelFiles').style.flex = 'none';
+    $('panelFiles').style.width = halfWidth + 'px';
+    $('panelChat').style.flex = 'none';
+    $('panelChat').style.width = halfWidth + 'px';
+
+    // Set row heights
+    topRow.style.flex = 'none';
+    topRow.style.height = halfHeight + 'px';
+    bottomRow.style.flex = 'none';
+    bottomRow.style.height = halfHeight + 'px';
   }
 
   function renderSubtasks(){
@@ -738,6 +1059,110 @@
     $('filePreview').style.display='block';$('previewName').textContent=p;
     $('previewSize').textContent=content.length+' chars';$('previewContent').textContent=content.slice(0,5000);
   }
+
+  // Update the in-project preview iframe (with debounce and change detection)
+  let previewDebounceTimer = null;
+  let lastPreviewUrl = null;
+  let projectBackendUrl = null; // Track backend URL for project view
+  let lastBackendCheckProject = null; // Prevent repeated backend status checks
+
+  function updateProjectPreview(force = false) {
+    const frame = $('projectPreviewFrame');
+    const empty = $('projectPreviewEmpty');
+    const openTab = $('openPreviewTab');
+
+    if (!state.projectName || !state.files.some(f => f.endsWith('.html'))) {
+      frame.classList.add('hidden');
+      empty.classList.remove('hidden');
+      empty.textContent = state.files.length === 0
+        ? 'Project preview will appear here once files are created.'
+        : 'No HTML files found to preview.';
+      openTab.href = '#';
+      lastPreviewUrl = null;
+      $('projectBackendPanel').style.display = 'none';
+      lastBackendCheckProject = null;
+      return;
+    }
+
+    // Check backend status once per project
+    if (state.projectRoot && ws && ws.readyState === 1 && lastBackendCheckProject !== state.projectName) {
+      lastBackendCheckProject = state.projectName;
+      ws.send(JSON.stringify({ type: 'backend:status', projectDir: '/projects/' + state.projectName }));
+    }
+
+    // If backend is running, use that URL instead of static preview
+    if (projectBackendUrl) {
+      frame.src = projectBackendUrl;
+      openTab.href = projectBackendUrl;
+    } else {
+      const previewUrl = '/preview/' + encodeURIComponent(state.projectName) + '/index.html';
+
+      // Skip if URL hasn't changed (unless forced)
+      if (!force && lastPreviewUrl === previewUrl && !frame.classList.contains('hidden')) {
+        return;
+      }
+
+      // Only update src if forcing refresh or URL changed
+      if (force || lastPreviewUrl !== previewUrl) {
+        frame.src = previewUrl;
+        lastPreviewUrl = previewUrl;
+      }
+      openTab.href = previewUrl;
+    }
+
+    frame.classList.remove('hidden');
+    empty.classList.add('hidden');
+  }
+
+  // Update project view backend panel
+  function updateProjectBackendPanel(data) {
+    const panel = $('projectBackendPanel');
+    const status = $('projectBackendStatus');
+    const type = $('projectBackendType');
+    const urlSpan = $('projectBackendUrl');
+    const urlLink = $('projectBackendUrlLink');
+    const startBtn = $('startProjectBackendBtn');
+    const stopBtn = $('stopProjectBackendBtn');
+
+    if (!data || data.type === 'static') {
+      panel.style.display = 'none';
+      projectBackendUrl = null;
+      updateProjectPreview(true);
+      return;
+    }
+
+    panel.style.display = 'block';
+    type.textContent = 'Type: ' + data.type;
+
+    if (data.running) {
+      status.textContent = 'running';
+      status.className = 'backend-status running';
+      urlSpan.style.display = 'inline';
+      urlLink.href = data.url;
+      urlLink.textContent = data.url;
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-block';
+      projectBackendUrl = data.url;
+      updateProjectPreview(true);
+    } else {
+      status.textContent = 'stopped';
+      status.className = 'backend-status stopped';
+      urlSpan.style.display = 'none';
+      startBtn.style.display = 'inline-block';
+      stopBtn.style.display = 'none';
+      projectBackendUrl = null;
+      updateProjectPreview(true);
+    }
+  }
+
+  // Debounced preview update for file changes
+  function schedulePreviewUpdate() {
+    if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
+    previewDebounceTimer = setTimeout(() => {
+      updateProjectPreview(false);
+      previewDebounceTimer = null;
+    }, 1000); // Wait 1 second after last file change
+  }
   function addEvent(type,cls,msg){
     state.events.push({type,cls,msg,ts:Date.now()});if(state.events.length>500)state.events.shift();
     const d=document.createElement('div');d.className='event';
@@ -767,6 +1192,7 @@
       const buttons = [];
       if (canResume) buttons.push('<button class="btn-secondary" onclick="resumeProject(\''+escapedPath+'\')">Resume</button>');
       if (canView) buttons.push('<button class="btn-secondary" onclick="viewProject(\''+escapedPath+'\')">View</button>');
+      buttons.push('<button class="btn-secondary" style="color:#dc3545" onclick="confirmDelete(\''+escapedPath+'\',\''+esc(p.taskDescription||p.dirName).replace(/'/g,"\\'")+'\')">Delete</button>');
       return '<div class="project-item"><span class="project-status-icon" style="color:'+color+'">'+icon+'</span>'+
         '<div class="project-info"><div class="project-task">'+esc(p.taskDescription||p.dirName)+'</div>'+
         '<div class="project-meta">'+esc(p.dirName)+' &bull; '+stats+(p.savedAt?' &bull; '+new Date(p.savedAt).toLocaleDateString():'')+'</div></div>'+
@@ -774,6 +1200,41 @@
     }).join('');
   }
   function showToast(msg){$('toast').textContent=msg;$('toast').classList.add('visible');setTimeout(()=>$('toast').classList.remove('visible'),5000);}
+
+  // --- Delete confirmation ---
+  let pendingDeletePath = null;
+
+  function confirmDelete(path, taskName) {
+    pendingDeletePath = path;
+    $('deleteModalText').textContent = `This will permanently delete "${taskName}" and all its contents.`;
+    $('deleteConfirmInput').value = '';
+    $('deleteConfirmBtn').disabled = true;
+    $('deleteModal').classList.add('visible');
+    $('deleteConfirmInput').focus();
+  }
+
+  function closeDeleteModal() {
+    $('deleteModal').classList.remove('visible');
+    pendingDeletePath = null;
+  }
+
+  function executeDelete() {
+    if (!pendingDeletePath) return;
+    ws.send(JSON.stringify({ type: 'delete:project', dirPath: pendingDeletePath }));
+    closeDeleteModal();
+    showToast('Deleting project...');
+  }
+
+  $('deleteConfirmInput').addEventListener('input', (e) => {
+    $('deleteConfirmBtn').disabled = e.target.value.toLowerCase() !== 'sure';
+  });
+
+  $('deleteCancelBtn').addEventListener('click', closeDeleteModal);
+  $('deleteConfirmBtn').addEventListener('click', executeDelete);
+
+  $('deleteModal').addEventListener('click', (e) => {
+    if (e.target === $('deleteModal')) closeDeleteModal();
+  });
 
   // --- Chat ---
   function addChatMessage(role, content, ts) {
@@ -804,6 +1265,108 @@
 
   $('chatSendBtn').addEventListener('click', sendChat);
   $('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+  // Project preview refresh button
+  $('refreshProjectPreviewBtn').addEventListener('click', () => updateProjectPreview(true));
+
+  // Project view backend start/stop
+  $('startProjectBackendBtn').addEventListener('click', () => {
+    if (state.projectName && ws && ws.readyState === 1) {
+      const projectDir = '/projects/' + state.projectName;
+      ws.send(JSON.stringify({ type: 'backend:start', projectDir }));
+      $('projectBackendStatus').textContent = 'starting...';
+    }
+  });
+
+  $('stopProjectBackendBtn').addEventListener('click', () => {
+    if (state.projectName && ws && ws.readyState === 1) {
+      const projectDir = '/projects/' + state.projectName;
+      ws.send(JSON.stringify({ type: 'backend:stop', projectDir }));
+    }
+  });
+
+  // --- Panel Resizing ---
+  let isResizing = false;
+  let currentHandle = null;
+  let startX = 0, startY = 0;
+  let startWidths = { top: 0, bottom: 0 };
+  let startHeights = { top: 0, bottom: 0 };
+
+  document.querySelectorAll('.resize-handle').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isResizing = true;
+      currentHandle = handle;
+      handle.classList.add('dragging');
+      startX = e.clientX;
+      startY = e.clientY;
+
+      // Store initial sizes
+      startWidths.top = $('panelSubtasks').offsetWidth;
+      startWidths.bottom = $('panelFiles').offsetWidth;
+      startHeights.top = $('monitorRowTop').offsetHeight;
+      startHeights.bottom = $('monitorRowBottom').offsetHeight;
+
+      document.body.style.cursor = handle.dataset.direction === 'h' ? 'col-resize' : 'row-resize';
+      document.body.style.userSelect = 'none';
+    });
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing || !currentHandle) return;
+
+    const direction = currentHandle.dataset.direction;
+    const deltaX = e.clientX - startX;
+    const deltaY = e.clientY - startY;
+
+    if (direction === 'h') {
+      // Horizontal resize (between columns)
+      const row = currentHandle.dataset.row;
+      const leftPanel = row === 'top' ? $('panelSubtasks') : $('panelFiles');
+      const rightPanel = row === 'top' ? $('panelWorkers') : $('panelChat');
+      const rowEl = row === 'top' ? $('monitorRowTop') : $('monitorRowBottom');
+
+      const containerWidth = rowEl.offsetWidth;
+      const handleWidth = 4;
+      const newLeftWidth = startWidths[row] + deltaX;
+      const newRightWidth = containerWidth - newLeftWidth - handleWidth;
+
+      if (newLeftWidth >= 200 && newRightWidth >= 200) {
+        leftPanel.style.flex = 'none';
+        leftPanel.style.width = newLeftWidth + 'px';
+        rightPanel.style.flex = 'none';
+        rightPanel.style.width = newRightWidth + 'px';
+      }
+    } else if (direction === 'v') {
+      // Vertical resize (between rows)
+      const container = $('monitorView');
+      const containerHeight = container.offsetHeight;
+      const handleHeight = 4;
+
+      const newTopHeight = startHeights.top + deltaY;
+      const newBottomHeight = containerHeight - newTopHeight - handleHeight;
+
+      if (newTopHeight >= 100 && newBottomHeight >= 100) {
+        const topRow = $('monitorRowTop');
+        const bottomRow = $('monitorRowBottom');
+
+        topRow.style.flex = 'none';
+        topRow.style.height = newTopHeight + 'px';
+        bottomRow.style.flex = 'none';
+        bottomRow.style.height = newBottomHeight + 'px';
+      }
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing && currentHandle) {
+      currentHandle.classList.remove('dragging');
+    }
+    isResizing = false;
+    currentHandle = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
 
   function updateChatPlaceholder() {
     const input = $('chatInput');
@@ -858,6 +1421,7 @@
   }
   window.resumeProject=function(dirPath){ws.send(JSON.stringify({type:'resume:project',dirPath}));};
   window.viewProject=function(dirPath){ws.send(JSON.stringify({type:'view:project',dirPath}));};
+  window.confirmDelete=confirmDelete;
 
   // Toggle
   $('sAutoDeployToggle').addEventListener('click', () => {
@@ -911,6 +1475,10 @@
         state.serverMode=data.mode;
         updateChatPlaceholder();
         if(data.mode==='running'){switchToMonitor();}
+        else if(data.mode==='planning'){
+          // Stay in lobby with planner active
+          if(state.mode!=='lobby')switchToLobby();
+        }
         else if(data.mode==='completed'||data.mode==='failed'){
           $('newProjectBtn').style.display='';state.phase=data.mode;updateHeader();
           if(data.mode==='completed'){
@@ -940,7 +1508,7 @@
         break;
       case 'orchestrator:iteration':state.iteration=data.iteration;updateHeader();break;
       case 'file:written':if(state.mode==='monitor')addEvent('file','file',data.path+' (W'+(data.workerIndex!=null?data.workerIndex:'?')+')');ws.send(JSON.stringify({type:'get:files'}));break;
-      case 'file:list':state.files=data;renderFiles();break;
+      case 'file:list':state.files=data;renderFiles();schedulePreviewUpdate();break;
       case 'file:content':showFilePreview(data.path,data.content);break;
       case 'project:done':
         state.phase='done';updateHeader();$('newProjectBtn').style.display='';
@@ -948,10 +1516,15 @@
         for(let i=0;i<3;i++)state.workers[i]={status:'done',task:'-',tool:'-'};renderWorkers();
         ws.send(JSON.stringify({type:'get:files'}));break;
       case 'project:list':state.projects=data;renderProjects();updatePreviewSelector();break;
+      case 'delete:error':showToast('Delete failed: '+(data.error||'Unknown error'));break;
       case 'project:created':
         $('taskDesc').textContent=data.task;$('taskInput').value='';$('startBtn').disabled=false;
         state.chatHistory=[];$('chatMessages').innerHTML='';
         state.deployResult=null;$('deployBanner').classList.remove('visible');$('monitorView').classList.remove('has-banner');
+        state.projectRoot = data.rootDir || null;
+        state.projectName = data.rootDir ? data.rootDir.split('/').pop().split('\\').pop() : null;
+        lastBackendCheckProject = null;
+        projectBackendUrl = null;
         switchToMonitor();
         addChatMessage('system', 'Project started: ' + data.task, Date.now());
         break;
@@ -959,10 +1532,15 @@
         $('taskDesc').textContent=data.task;$('taskInput').value='';$('startBtn').disabled=false;
         state.chatHistory=[];$('chatMessages').innerHTML='';
         state.deployResult=null;$('deployBanner').classList.remove('visible');$('monitorView').classList.remove('has-banner');
+        state.projectRoot = data.rootDir || null;
+        state.projectName = data.rootDir ? data.rootDir.split('/').pop().split('\\').pop() : null;
+        lastBackendCheckProject = null;
+        projectBackendUrl = null;
         if(data.subtasks){state.subtasks=data.subtasks;renderSubtasks();}
         switchToMonitor();
         $('newProjectBtn').style.display='';
         addChatMessage('system', 'Viewing project: ' + data.task, Date.now());
+        updateProjectPreview();
         break;
       case 'project:error':showToast(data.message);$('startBtn').disabled=false;break;
       case 'settings:current':case 'settings:updated':populateSettings(data);break;
@@ -1013,23 +1591,105 @@
       // Backend events
       case 'backend:info':
         updateBackendPanel({ type: data.type, running: false });
+        // Also update project view panel if in monitor mode
+        if (state.mode === 'monitor') {
+          updateProjectBackendPanel({ type: data.type, running: false });
+        }
         break;
       case 'backend:starting':
         // Show starting status in panel
         $('backendStatus').textContent = 'starting...';
         $('backendStatus').className = 'backend-status stopped';
+        // Also update project view panel if in monitor mode
+        if (state.mode === 'monitor') {
+          $('projectBackendStatus').textContent = 'starting...';
+          $('projectBackendStatus').className = 'backend-status stopped';
+        }
         break;
       case 'backend:started':
         updateBackendPanel({ type: 'node', running: true, port: data.port, url: data.url });
+        // Also update project view panel if this is the current project
+        if (state.mode === 'monitor' && state.projectName && data.projectDir && data.projectDir.includes(state.projectName)) {
+          updateProjectBackendPanel({ type: 'node', running: true, port: data.port, url: data.url });
+        }
         break;
       case 'backend:stopped':
         updateBackendPanel({ type: 'node', running: false });
+        // Also update project view panel
+        if (state.mode === 'monitor') {
+          updateProjectBackendPanel({ type: 'node', running: false });
+        }
         break;
       case 'backend:status':
         updateBackendPanel(data);
+        // Also update project view panel if in monitor mode
+        if (state.mode === 'monitor') {
+          updateProjectBackendPanel(data);
+        }
         break;
       case 'backend:error':
         showToast(data.error || 'Backend error');
+        break;
+      // Planner events
+      case 'planner:started':
+        state.plannerReady = false;
+        state.plannerTask = '';
+        state.plannerDir = '';
+        $('plannerMessages').innerHTML = '<div class="planner-msg"><div class="msg-sender planner">Planner</div><div class="msg-body">What would you like to build? Just describe it - mention a folder path if you want to work on an existing project.</div></div>';
+        updatePlannerUI();
+        break;
+      case 'planner:user':
+        // User message already added locally
+        break;
+      case 'planner:token':
+        // Could stream tokens here if desired
+        break;
+      case 'planner:tool':
+        addPlannerMessage('tool', '→ ' + data.tool + ': ' + data.message, true);
+        break;
+      case 'planner:response':
+        state.plannerWaiting = false;
+        $('plannerTyping').classList.remove('visible');
+        $('plannerSendBtn').disabled = false;
+        if (data.response) {
+          addPlannerMessage('planner', data.response);
+        }
+        if (data.state) {
+          state.plannerTask = data.state.taskDescription || '';
+          state.plannerDir = data.state.projectDir || '';
+          state.plannerReady = data.state.ready || false;
+          updatePlannerUI();
+        }
+        break;
+      case 'planner:ready':
+        state.plannerReady = true;
+        state.plannerTask = data.taskDescription || '';
+        state.plannerDir = data.projectDir || '';
+        updatePlannerUI();
+        addPlannerMessage('planner', 'Ready to build! Click "Start Build" when you\'re ready.');
+        break;
+      case 'planner:error':
+        state.plannerWaiting = false;
+        $('plannerTyping').classList.remove('visible');
+        $('plannerSendBtn').disabled = false;
+        addPlannerMessage('tool', 'Error: ' + (data.error || 'Unknown error'), true);
+        break;
+      case 'planner:cancelled':
+        state.plannerReady = false;
+        state.plannerTask = '';
+        state.plannerDir = '';
+        state.plannerWaiting = false;
+        $('plannerTyping').classList.remove('visible');
+        $('plannerSendBtn').disabled = false;
+        updatePlannerUI();
+        break;
+      case 'planner:state':
+        if (data.state) {
+          state.plannerTask = data.state.taskDescription || '';
+          state.plannerDir = data.state.projectDir || '';
+          state.plannerReady = data.state.ready || false;
+          updatePlannerUI();
+        }
         break;
     }
   }

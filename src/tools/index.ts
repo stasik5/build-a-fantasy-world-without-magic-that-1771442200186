@@ -9,6 +9,7 @@ import { patchFileTool } from './patch-file.js';
 import { webSearchTool } from './web-search.js';
 import { webReaderTool } from './web-reader.js';
 import { globFilesTool } from './glob-files.js';
+import { executeSqlTool, listTablesTool, initDatabaseTool } from './execute-sql.js';
 
 export const WORKER_TOOLS: ToolDefinition[] = [
   {
@@ -143,6 +144,51 @@ export const WORKER_TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'init_database',
+      description: 'Create a new SQLite database with the given schema. Use this to set up a local database for the project. Creates the file and runs CREATE TABLE statements.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dbPath: { type: 'string', description: 'Path for the database file (e.g., "data/app.db") or ":memory:" for in-memory' },
+          schema: { type: 'string', description: 'SQL schema statements (CREATE TABLE, CREATE INDEX, etc.). Separate multiple statements with semicolons.' },
+        },
+        required: ['dbPath', 'schema'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'execute_sql',
+      description: 'Execute SQL queries on a SQLite database. Supports SELECT, INSERT, UPDATE, DELETE, and DDL statements. Use parameterized queries for safety.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dbPath: { type: 'string', description: 'Path to the database file (e.g., "data/app.db") or ":memory:"' },
+          query: { type: 'string', description: 'SQL query to execute' },
+          params: { type: 'array', description: 'Optional: parameters for parameterized queries. Use ? as placeholder. Example: ["SELECT * FROM users WHERE id = ?", [1]]', items: {} },
+        },
+        required: ['dbPath', 'query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_tables',
+      description: 'List all tables and views in a SQLite database with their schemas and row counts. Use this to explore an existing database.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dbPath: { type: 'string', description: 'Path to the database file (e.g., "data/app.db") or ":memory:"' },
+        },
+        required: ['dbPath'],
+      },
+    },
+  },
 ];
 
 export async function executeTool(
@@ -177,6 +223,12 @@ export async function executeTool(
       return webReaderTool(args as { url: string });
     case 'glob_files':
       return globFilesTool(projectRoot, args as { pattern: string });
+    case 'init_database':
+      return initDatabaseTool(projectRoot, args as { dbPath: string; schema: string });
+    case 'execute_sql':
+      return executeSqlTool(projectRoot, args as { dbPath: string; query: string; params?: any[] });
+    case 'list_tables':
+      return listTablesTool(projectRoot, args as { dbPath: string });
     default:
       return `Error: Unknown tool "${toolCall.function.name}"`;
   }

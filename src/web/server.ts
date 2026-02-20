@@ -13,15 +13,110 @@ import { CONFIG } from '../config.js';
 import { createProjectDir } from '../swarm/project-manager.js';
 import { loadCheckpoint } from '../swarm/checkpoint.js';
 import { rateLimiter } from '../llm/rate-limiter.js';
+import {
+  createPlannerState,
+  processPlannerMessage,
+  buildPlanningContext,
+  type PlannerState,
+} from '../swarm/planner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let projectContext: ProjectContext | null = null;
 let wss: WebSocketServer | null = null;
-let serverMode: 'idle' | 'running' | 'completed' | 'failed' = 'idle';
+let serverMode: 'idle' | 'running' | 'completed' | 'failed' | 'planning' = 'idle';
+
+// Planner state for interactive planning mode
+let plannerState: PlannerState | null = null;
 
 // Deploy state
 let deployResult: { repoUrl?: string; pagesUrl?: string } | null = null;
+
+// Project registry - tracks all built projects including those outside PROJECTS_ROOT
+const REGISTRY_PATH = path.join(CONFIG.PROJECTS_ROOT, '.project-registry.json');
+
+interface RegistryEntry {
+  dirName: string;
+  fullPath: string;
+  taskDescription: string;
+  lastBuiltAt: string;
+  source: 'planner' | 'direct';
+}
+
+function loadProjectRegistry(): RegistryEntry[] {
+  try {
+    if (fs.existsSync(REGISTRY_PATH)) {
+      return JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf-8'));
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveProjectRegistry(registry: RegistryEntry[]): void {
+  try {
+    if (!fs.existsSync(CONFIG.PROJECTS_ROOT)) {
+      fs.mkdirSync(CONFIG.PROJECTS_ROOT, { recursive: true });
+    }
+    fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2));
+  } catch { /* ignore */ }
+}
+
+function addToRegistry(projectDir: string, taskDescription: string, source: 'planner' | 'direct'): void {
+  const registry = loadProjectRegistry();
+  const dirName = path.basename(projectDir);
+  const existingIdx = registry.findIndex(e => e.fullPath === projectDir);
+
+  const entry: RegistryEntry = {
+    dirName,
+    fullPath: projectDir,
+    taskDescription,
+    lastBuiltAt: new Date().toISOString(),
+    source,
+  };
+
+  if (existingIdx >= 0) {
+    registry[existingIdx] = entry;
+  } else {
+    registry.unshift(entry); // Add to front
+  }
+
+  // Keep only last 100 projects
+  saveProjectRegistry(registry.slice(0, 100));
+}
+
+function removeFromRegistry(projectDir: string): void {
+  const registry = loadProjectRegistry();
+  const filtered = registry.filter(e => e.fullPath !== projectDir);
+  saveProjectRegistry(filtered);
+}
+
+function deleteProject(projectDir: string): { success: boolean; error?: string } {
+  try {
+    // Safety check: only allow deleting within PROJECTS_ROOT or known registry paths
+    const registry = loadProjectRegistry();
+    const isInRegistry = registry.some(e => e.fullPath === projectDir);
+    const isInProjectsRoot = projectDir.startsWith(CONFIG.PROJECTS_ROOT);
+
+    if (!isInRegistry && !isInProjectsRoot) {
+      return { success: false, error: 'Can only delete projects in the projects folder or created via planner' };
+    }
+
+    // Stop any running backend for this project
+    stopBackend(projectDir);
+
+    // Remove directory
+    if (fs.existsSync(projectDir)) {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+
+    // Remove from registry
+    removeFromRegistry(projectDir);
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
 
 // Backend preview state
 interface BackendProcess {
@@ -128,42 +223,100 @@ interface ProjectSummary {
 
 function listProjects(): ProjectSummary[] {
   const root = CONFIG.PROJECTS_ROOT;
-  if (!fs.existsSync(root)) return [];
+  const seenPaths = new Set<string>();
+  const results: ProjectSummary[] = [];
 
-  const dirs = fs.readdirSync(root, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .sort((a, b) => b.name.localeCompare(a.name)); // newest first
+  // First, add projects from registry (includes external projects)
+  const registry = loadProjectRegistry();
+  for (const entry of registry) {
+    if (fs.existsSync(entry.fullPath)) {
+      const checkpointPath = path.join(entry.fullPath, '.swarm-checkpoint.json');
+      let status = 'unknown';
+      let savedAt: string | null = entry.lastBuiltAt;
+      const subtaskStats = { total: 0, completed: 0, failed: 0 };
 
-  return dirs.map(d => {
-    const checkpointPath = path.join(root, d.name, '.swarm-checkpoint.json');
-    let status = 'unknown';
-    let taskDescription = '';
-    let savedAt: string | null = null;
-    const subtaskStats = { total: 0, completed: 0, failed: 0 };
+      if (fs.existsSync(checkpointPath)) {
+        try {
+          const data = JSON.parse(fs.readFileSync(checkpointPath, 'utf-8'));
+          savedAt = data.savedAt || entry.lastBuiltAt;
+          const subtasks = data.subtasks || [];
+          subtaskStats.total = subtasks.length;
+          subtaskStats.completed = subtasks.filter((s: any) => s.status === 'completed').length;
+          subtaskStats.failed = subtasks.filter((s: any) => s.status === 'failed').length;
 
-    if (fs.existsSync(checkpointPath)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(checkpointPath, 'utf-8'));
-        taskDescription = data.taskDescription || '';
-        savedAt = data.savedAt || null;
-        const subtasks = data.subtasks || [];
-        subtaskStats.total = subtasks.length;
-        subtaskStats.completed = subtasks.filter((s: any) => s.status === 'completed').length;
-        subtaskStats.failed = subtasks.filter((s: any) => s.status === 'failed').length;
-
-        if (subtaskStats.total > 0 && subtaskStats.completed === subtaskStats.total) {
-          status = 'completed';
-        } else if (subtaskStats.failed > 0) {
-          status = 'partial';
-        } else {
-          status = 'in-progress';
+          if (subtaskStats.total > 0 && subtaskStats.completed === subtaskStats.total) {
+            status = 'completed';
+          } else if (subtaskStats.failed > 0) {
+            status = 'partial';
+          } else {
+            status = 'in-progress';
+          }
+        } catch {
+          status = 'corrupted';
         }
-      } catch {
-        status = 'corrupted';
+      } else {
+        status = 'completed'; // Assume completed if no checkpoint
       }
-    }
 
-    return { dirName: d.name, fullPath: path.join(root, d.name), taskDescription, status, subtaskStats, savedAt };
+      results.push({
+        dirName: entry.dirName,
+        fullPath: entry.fullPath,
+        taskDescription: entry.taskDescription,
+        status,
+        subtaskStats,
+        savedAt,
+      });
+      seenPaths.add(entry.fullPath);
+    }
+  }
+
+  // Then, scan PROJECTS_ROOT for any projects not in registry
+  if (fs.existsSync(root)) {
+    const dirs = fs.readdirSync(root, { withFileTypes: true })
+      .filter(d => d.isDirectory() && d.name !== '.')
+      .sort((a, b) => b.name.localeCompare(a.name));
+
+    for (const d of dirs) {
+      const fullPath = path.join(root, d.name);
+      if (seenPaths.has(fullPath)) continue; // Already in results from registry
+
+      const checkpointPath = path.join(fullPath, '.swarm-checkpoint.json');
+      let status = 'unknown';
+      let taskDescription = '';
+      let savedAt: string | null = null;
+      const subtaskStats = { total: 0, completed: 0, failed: 0 };
+
+      if (fs.existsSync(checkpointPath)) {
+        try {
+          const data = JSON.parse(fs.readFileSync(checkpointPath, 'utf-8'));
+          taskDescription = data.taskDescription || '';
+          savedAt = data.savedAt || null;
+          const subtasks = data.subtasks || [];
+          subtaskStats.total = subtasks.length;
+          subtaskStats.completed = subtasks.filter((s: any) => s.status === 'completed').length;
+          subtaskStats.failed = subtasks.filter((s: any) => s.status === 'failed').length;
+
+          if (subtaskStats.total > 0 && subtaskStats.completed === subtaskStats.total) {
+            status = 'completed';
+          } else if (subtaskStats.failed > 0) {
+            status = 'partial';
+          } else {
+            status = 'in-progress';
+          }
+        } catch {
+          status = 'corrupted';
+        }
+      }
+
+      results.push({ dirName: d.name, fullPath, taskDescription, status, subtaskStats, savedAt });
+    }
+  }
+
+  // Sort by savedAt (most recent first)
+  return results.sort((a, b) => {
+    const aTime = a.savedAt ? new Date(a.savedAt).getTime() : 0;
+    const bTime = b.savedAt ? new Date(b.savedAt).getTime() : 0;
+    return bTime - aTime;
   });
 }
 
@@ -663,6 +816,16 @@ async function handleClientMessage(ws: WebSocket, raw: string): Promise<void> {
           viewProject(msg.dirPath);
         }
         break;
+      case 'delete:project':
+        if (msg.dirPath) {
+          const result = deleteProject(msg.dirPath);
+          if (result.success) {
+            broadcastEvent('project:list', listProjects());
+          } else {
+            sendTo(ws, 'delete:error', { error: result.error });
+          }
+        }
+        break;
       case 'get:settings':
         sendTo(ws, 'settings:current', getMaskedSettings());
         break;
@@ -725,6 +888,117 @@ async function handleClientMessage(ws: WebSocket, raw: string): Promise<void> {
           const resolvedPath = resolveProjectPath(msg.projectDir);
           const status = getBackendStatus(resolvedPath);
           sendTo(ws, 'backend:status', { projectDir: msg.projectDir, ...status });
+        }
+        break;
+
+      // --- Planner handlers ---
+      case 'planner:start':
+        plannerState = createPlannerState();
+        serverMode = 'planning';
+        broadcastEvent('server:status', { mode: 'planning' });
+        sendTo(ws, 'planner:started', { state: plannerState });
+        break;
+
+      case 'planner:send':
+        if (!plannerState) {
+          // Auto-start planner if not already in planning mode
+          plannerState = createPlannerState();
+          serverMode = 'planning';
+          broadcastEvent('server:status', { mode: 'planning' });
+        }
+
+        if (msg.message) {
+          // Broadcast user message immediately
+          broadcastEvent('planner:user', { message: msg.message, ts: Date.now() });
+
+          // Process with planner
+          try {
+            const result = await processPlannerMessage(
+              plannerState,
+              msg.message,
+              (token) => {
+                // Stream tokens to clients
+                broadcastEvent('planner:token', { token });
+              },
+              (toolName, toolResult) => {
+                // Broadcast tool calls
+                broadcastEvent('planner:tool', {
+                  tool: toolName,
+                  success: toolResult.success,
+                  message: toolResult.message,
+                  ts: Date.now(),
+                });
+              }
+            );
+
+            // Broadcast response
+            broadcastEvent('planner:response', {
+              response: result.response,
+              state: {
+                taskDescription: plannerState.taskDescription,
+                projectDir: plannerState.projectDir,
+                ready: plannerState.ready,
+              },
+              ts: Date.now(),
+            });
+
+            // If build is ready, transition
+            if (plannerState.ready && plannerState.taskDescription) {
+              const planningContext = buildPlanningContext(plannerState);
+              // Store for later use when starting project
+              (plannerState as any).planningContext = planningContext;
+              broadcastEvent('planner:ready', {
+                taskDescription: plannerState.taskDescription,
+                projectDir: plannerState.projectDir,
+                planningContext,
+              });
+            }
+          } catch (err: any) {
+            broadcastEvent('planner:error', { error: err.message });
+          }
+        }
+        break;
+
+      case 'planner:build':
+        if (!plannerState || !plannerState.taskDescription) {
+          sendTo(ws, 'planner:error', { error: 'No task description set' });
+          break;
+        }
+
+        // Start the project with planning context
+        const pState = plannerState;
+        plannerState = null; // Clear planner state
+
+        await startProject(
+          pState.taskDescription,
+          msg.maxIterations || getRuntimeConfig().MAX_ORCHESTRATOR_ITERATIONS,
+          pState.projectDir || undefined
+        );
+
+        // Set planning context on the project context
+        if (projectContext && (pState as any).planningContext) {
+          projectContext.planningContext = (pState as any).planningContext;
+        }
+        break;
+
+      case 'planner:cancel':
+        plannerState = null;
+        serverMode = 'idle';
+        broadcastEvent('server:status', { mode: 'idle' });
+        broadcastEvent('planner:cancelled', {});
+        break;
+
+      case 'planner:state':
+        if (plannerState) {
+          sendTo(ws, 'planner:state', {
+            state: {
+              taskDescription: plannerState.taskDescription,
+              projectDir: plannerState.projectDir,
+              ready: plannerState.ready,
+            },
+          });
+        } else {
+          sendTo(ws, 'planner:state', { state: null });
         }
         break;
     }
@@ -929,9 +1203,17 @@ export function startWebServer(port: number): Promise<http.Server> {
       });
     }
 
-    // When project completes via messageBus, update server mode
+    // When project completes via messageBus, update server mode and add to registry
     messageBus.on('project:done', () => {
       serverMode = 'completed';
+      // Add to registry so it appears in project history
+      if (projectContext) {
+        addToRegistry(
+          projectContext.rootDir,
+          projectContext.taskDescription,
+          plannerState ? 'planner' : 'direct'
+        );
+      }
     });
 
     // Throttle worker:token events

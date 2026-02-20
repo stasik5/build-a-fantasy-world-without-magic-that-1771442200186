@@ -12,91 +12,15 @@ import type { ChatMessage } from '../types.js';
 import { chatCompletionStream } from '../llm/client.js';
 import { analyzeProject, formatProjectMap } from '../tools/project-analyzer.js';
 import type OpenAI from 'openai';
-
-interface SessionState {
-  taskDescription: string;
-  projectDir: string | null;
-  messages: ChatMessage[];
-  ready: boolean;
-}
-
-const PLANNER_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
-  {
-    type: 'function',
-    function: {
-      name: 'set_directory',
-      description: 'Set the project working directory to an existing folder on the user\'s machine. Call this when the user mentions a path, folder, or project location they want to work in. Also call this if the user says things like "go to", "look at", "open", "work on the project in", etc.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Absolute path to the directory' },
-        },
-        required: ['path'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_task',
-      description: 'Set or update the task description. Call this when the user describes what they want built or changed. Extract a clear, concise task description from their words. Call this on the very first user message if they describe a task, and again if they refine it later.',
-      parameters: {
-        type: 'object',
-        properties: {
-          description: { type: 'string', description: 'Clear task description extracted from the user\'s words' },
-        },
-        required: ['description'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'scan_directory',
-      description: 'Scan a directory to see what files and technologies are in it. Call this after set_directory to understand the project, or when the user asks to look at or examine a folder.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Absolute path to scan. If not provided, scans the current project directory.' },
-        },
-        required: [],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'start_build',
-      description: 'Start the build process. Call this ONLY when the user explicitly says to start, build, go, execute, run it, do it, make it, let\'s go, ship it, or similar clear intent to begin. Do NOT call this just because the task seems ready — wait for the user to say they want to start.',
-      parameters: {
-        type: 'object',
-        properties: {},
-        required: [],
-      },
-    },
-  },
-];
-
-const PLANNER_SYSTEM_PROMPT = `You are the planning assistant for a multi-agent coding swarm (1 orchestrator + 3 workers powered by GLM-5).
-
-You chat with the user BEFORE any code is written. Your job:
-1. Understand what they want to build or change
-2. Use your tools to set the project directory and task based on what they say
-3. Ask 1-2 clarifying questions if requirements are unclear
-4. When they're ready, use start_build to kick off execution
-
-IMPORTANT BEHAVIORS:
-- When the user mentions ANY file path or directory, immediately call set_directory with it, then scan_directory to see what's there
-- When the user describes what to build/fix/change, call set_task with a clear version of their request
-- You can call multiple tools at once (e.g., set_directory + set_task from a single message)
-- Don't ask unnecessary questions. If the user is clear about what they want, confirm and ask if they're ready to build
-- When the user says "go", "build it", "start", "do it", "let's go", "ship it", or similar → call start_build
-- Keep responses SHORT (2-3 sentences max). No walls of text
-- If you set_directory and scan finds an existing project, incorporate that knowledge into your planning
-
-CURRENT STATE:
-- Task: {{TASK}}
-- Directory: {{DIR}}`;
+import {
+  PLANNER_TOOLS,
+  createPlannerState,
+  buildPlannerSystemPrompt,
+  executePlannerTool,
+  buildPlanningContext,
+  type PlannerState,
+  type PlannerToolResult,
+} from '../swarm/planner.js';
 
 function createReadline(): readline.Interface {
   return readline.createInterface({
@@ -137,21 +61,11 @@ export async function runInteractiveSession(
 ): Promise<InteractiveResult> {
   const rl = createReadline();
 
-  const state: SessionState = {
-    taskDescription: initialTask ?? '',
-    projectDir: initialDir ?? null,
-    messages: [],
-    ready: false,
-  };
+  const state: PlannerState = createPlannerState();
+  state.taskDescription = initialTask ?? '';
+  state.projectDir = initialDir ?? null;
 
-  // Build system prompt with current state
-  function getSystemPrompt(): string {
-    return PLANNER_SYSTEM_PROMPT
-      .replace('{{TASK}}', state.taskDescription || '(not set)')
-      .replace('{{DIR}}', state.projectDir || '(not set — will create new)');
-  }
-
-  state.messages = [{ role: 'system', content: getSystemPrompt() }];
+  state.messages = [{ role: 'system', content: buildPlannerSystemPrompt(state) }];
 
   console.log(chalk.cyan.bold('\n  Interactive Planning Mode'));
   console.log(chalk.dim('  Just describe what you want. Type /help for commands.\n'));
@@ -218,12 +132,9 @@ export async function runInteractiveSession(
   };
 }
 
-async function processUserMessage(input: string, state: SessionState): Promise<void> {
+async function processUserMessage(input: string, state: PlannerState): Promise<void> {
   // Update system prompt with current state
-  state.messages[0] = { role: 'system', content: PLANNER_SYSTEM_PROMPT
-    .replace('{{TASK}}', state.taskDescription || '(not set)')
-    .replace('{{DIR}}', state.projectDir || '(not set — will create new)') };
-
+  state.messages[0] = { role: 'system', content: buildPlannerSystemPrompt(state) };
   state.messages.push({ role: 'user', content: input });
 
   // Agent loop: keep calling until no more tool calls
@@ -250,12 +161,17 @@ async function processUserMessage(input: string, state: SessionState): Promise<v
     // Process tool calls
     if (msg.tool_calls && msg.tool_calls.length > 0) {
       for (const toolCall of msg.tool_calls) {
-        const result = await executeplannerTool(toolCall, state);
+        const result = await executePlannerToolCLI(toolCall, state);
         state.messages.push({
           role: 'tool' as const,
           tool_call_id: toolCall.id,
-          content: result,
+          content: result.message,
         });
+
+        // Apply state updates
+        if (result.stateUpdate) {
+          Object.assign(state, result.stateUpdate);
+        }
       }
 
       // If start_build was called, we're done
@@ -273,73 +189,36 @@ async function processUserMessage(input: string, state: SessionState): Promise<v
   }
 }
 
-async function executeplannerTool(
+/**
+ * CLI-specific wrapper for planner tool execution with console output.
+ */
+async function executePlannerToolCLI(
   toolCall: OpenAI.Chat.Completions.ChatCompletionMessageToolCall,
-  state: SessionState,
-): Promise<string> {
-  let args: Record<string, any>;
-  try {
-    args = JSON.parse(toolCall.function.arguments);
-  } catch {
-    return 'Error: invalid arguments';
+  state: PlannerState,
+): Promise<PlannerToolResult> {
+  const result = await executePlannerTool(toolCall, state);
+
+  // CLI-specific output
+  if (result.success) {
+    if (toolCall.function.name === 'set_directory') {
+      console.log(chalk.dim(`  → Directory set to: ${state.projectDir}`));
+    } else if (toolCall.function.name === 'set_task') {
+      console.log(chalk.dim(`  → Task: ${state.taskDescription}`));
+    } else if (toolCall.function.name === 'scan_directory') {
+      // Extract summary from message if it's a scan result
+      const summaryMatch = result.message.match(/Project analysis:\n([^\n]+)/);
+      if (summaryMatch) {
+        console.log(chalk.dim(`  → Scanned: ${summaryMatch[1]}`));
+      }
+    }
+  } else {
+    console.log(chalk.red(`  ${result.message}\n`));
   }
 
-  switch (toolCall.function.name) {
-    case 'set_directory': {
-      const dirPath = args.path as string;
-      const resolved = path.resolve(dirPath);
-
-      if (!fs.existsSync(resolved)) {
-        console.log(chalk.red(`  Directory not found: ${resolved}\n`));
-        return `Error: directory does not exist: ${resolved}`;
-      }
-      if (!fs.statSync(resolved).isDirectory()) {
-        console.log(chalk.red(`  Not a directory: ${resolved}\n`));
-        return `Error: not a directory: ${resolved}`;
-      }
-
-      state.projectDir = resolved;
-      console.log(chalk.dim(`  → Directory set to: ${resolved}`));
-      return `Directory set to: ${resolved}`;
-    }
-
-    case 'set_task': {
-      const desc = args.description as string;
-      state.taskDescription = desc;
-      console.log(chalk.dim(`  → Task: ${desc}`));
-      return `Task set to: "${desc}"`;
-    }
-
-    case 'scan_directory': {
-      const scanPath = args.path ? path.resolve(args.path as string) : state.projectDir;
-      if (!scanPath) {
-        return 'No directory set. Ask the user for a path.';
-      }
-
-      const projectMap = await analyzeProject(scanPath);
-      if (!projectMap) {
-        console.log(chalk.dim(`  → Scanned ${scanPath}: empty directory`));
-        return 'Directory is empty (no files found).';
-      }
-
-      console.log(chalk.dim(`  → Scanned: ${projectMap.summary}`));
-      return `Project analysis:\n${projectMap.summary}\n\nFile structure:\n${projectMap.fileTree}\n\nKey files:\n${Object.keys(projectMap.keyFileContents).join(', ') || 'none'}`;
-    }
-
-    case 'start_build': {
-      if (!state.taskDescription) {
-        return 'Cannot start: no task description set. Ask the user what they want to build.';
-      }
-      state.ready = true;
-      return 'Build started.';
-    }
-
-    default:
-      return `Unknown tool: ${toolCall.function.name}`;
-  }
+  return result;
 }
 
-function handleSlashCommand(input: string, state: SessionState): 'build' | 'quit' | 'continue' {
+function handleSlashCommand(input: string, state: PlannerState): 'build' | 'quit' | 'continue' {
   const cmd = input.split(/\s+/)[0]!.toLowerCase();
 
   switch (cmd) {
@@ -353,9 +232,7 @@ function handleSlashCommand(input: string, state: SessionState): 'build' | 'quit
     case '/reset':
       state.taskDescription = '';
       state.projectDir = null;
-      state.messages = [{ role: 'system', content: PLANNER_SYSTEM_PROMPT
-        .replace('{{TASK}}', '(not set)')
-        .replace('{{DIR}}', '(not set — will create new)') }];
+      state.messages = [{ role: 'system', content: buildPlannerSystemPrompt(state) }];
       console.log(chalk.yellow('  Session reset.\n'));
       return 'continue';
     case '/help':
@@ -368,23 +245,4 @@ function handleSlashCommand(input: string, state: SessionState): 'build' | 'quit
       console.log(chalk.dim(`  Unknown command: ${cmd}. Type /help for commands.\n`));
       return 'continue';
   }
-}
-
-function buildPlanningContext(state: SessionState): string {
-  const userAssistantMessages = state.messages.filter(
-    (m) => (m as any).role === 'user' || (m as any).role === 'assistant'
-  );
-
-  if (userAssistantMessages.length <= 1) return '';
-
-  const lines: string[] = ['Planning conversation summary:'];
-  for (const msg of userAssistantMessages) {
-    const role = (msg as any).role === 'user' ? 'User' : 'Planner';
-    const content = (msg as any).content;
-    if (typeof content === 'string' && content.length > 0) {
-      lines.push(`${role}: ${content.slice(0, 500)}`);
-    }
-  }
-
-  return lines.join('\n').slice(0, 5000);
 }
